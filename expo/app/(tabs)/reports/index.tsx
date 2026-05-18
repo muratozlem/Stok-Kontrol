@@ -306,7 +306,7 @@ export default function ReportsPage() {
 </head>
 <body>
   <div class="header">
-    <div class="brand">Torbalı Gf Stok Kontrol</div>
+    <div class="brand">Stok Kontrol</div>
     <div class="title">Stok Durum Raporu</div>
     <div class="meta">${esc(dateStr)} · ${esc(timeStr)}</div>
   </div>
@@ -356,7 +356,7 @@ export default function ReportsPage() {
     };
 
     const rows: string[] = [];
-    rows.push(q('Torbalı Gf Stok Kontrol — Stok Durum Raporu'));
+    rows.push(q('Stok Kontrol — Stok Durum Raporu'));
     rows.push(q(`Rapor Tarihi: ${dateStr}  Saat: ${timeStr}`));
     rows.push(q(`Depolar: ${whLabel}`));
     rows.push(q(`Ürünler: ${prLabel}`));

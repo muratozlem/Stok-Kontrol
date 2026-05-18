@@ -170,7 +170,7 @@ export default function SettingsPage() {
         <View style={styles.appIconCircle}>
           <Info size={18} color={Colors.primary} strokeWidth={2.3} />
         </View>
-        <Text style={styles.appName}>Torbalı Gf Stok Kontrol</Text>
+        <Text style={styles.appName}>Stok Kontrol</Text>
         <Text style={styles.appVersion}>Sürüm 1.0.0</Text>
         <View style={styles.creditDivider} />
         <Text style={styles.creditLabel}>BUILT & DESIGNED BY</Text>

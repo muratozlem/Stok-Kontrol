@@ -14,7 +14,7 @@ export default function DashboardStackLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Torbalı Gf Stok",
+          title: "Stok Kontrol",
           headerTitleStyle: {
             fontWeight: "800" as const,
             fontSize: 18,

@@ -179,7 +179,7 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   useEffect(() => {
-    console.log("[App] Torbalı Gf Stok Kontrol v1.0 starting");
+    console.log("[App] Stok Kontrol v1.0 starting");
     SplashScreen.hideAsync();
   }, []);
 

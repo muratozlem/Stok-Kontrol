@@ -10,6 +10,7 @@ import {
   Animated,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff, LogIn } from 'lucide-react-native';
@@ -21,22 +22,6 @@ const GREEN  = '#7DC242';
 const YELLOW = '#F5C225';
 const ORANGE = '#F07D28';
 
-function LogoGrid({ size = 64 }: { size?: number }) {
-  const radius = size * 0.12;
-  const gap = 5;
-  return (
-    <View style={{ width: size, height: size, gap }}>
-      <View style={{ flex: 1, flexDirection: 'row', gap }}>
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: BLUE }} />
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: YELLOW }} />
-      </View>
-      <View style={{ flex: 1, flexDirection: 'row', gap }}>
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: GREEN }} />
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: ORANGE }} />
-      </View>
-    </View>
-  );
-}
 
 export default function LoginScreen() {
   const { login, isLoggingIn, loginError, resetLoginError } = useAuth();
@@ -94,10 +79,9 @@ export default function LoginScreen() {
 
           <Animated.View style={[styles.logoArea, { transform: [{ scale: logoScale }] }]}>
             <View style={styles.logoWrapper}>
-              <LogoGrid size={72} />
+              <Image source={require('../assets/images/logo.png')} style={{ width: 72, height: 72, borderRadius: 16 }} />
             </View>
-            <Text style={styles.appName}>Torbalı Gf</Text>
-            <Text style={styles.appTagline}>Stok Kontrol</Text>
+            <Text style={styles.appName}>Stok Kontrol</Text>
           </Animated.View>
         </View>
 
@@ -180,7 +164,7 @@ export default function LoginScreen() {
               <TouchableOpacity onPress={() => router.replace('/register')} style={styles.registerLink} testID="go-to-register">
                 <Text style={styles.registerLinkText}>
                   Hesabın yok mu?{' '}
-                  <Text style={styles.registerLinkBold}>Kayıt Ol</Text>
+                  <Text style={styles.registerLinkBold}>Üye Ol</Text>
                 </Text>
               </TouchableOpacity>
             </Animated.View>
@@ -267,14 +251,14 @@ const styles = StyleSheet.create({
   input: { flex: 1, fontSize: 15, color: Colors.text, height: 52 },
   eyeButton: { padding: 6 },
   loginButton: {
-    backgroundColor: ORANGE,
+    backgroundColor: '#1A1D2E',
     borderRadius: 14,
     height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: ORANGE,
+    shadowColor: '#1A1D2E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
@@ -284,5 +268,5 @@ const styles = StyleSheet.create({
   loginButtonText: { color: Colors.white, fontSize: 16, fontWeight: '700' as const },
   registerLink: { marginTop: 20, alignItems: 'center' },
   registerLinkText: { fontSize: 14, color: Colors.textSecondary },
-  registerLinkBold: { color: ORANGE, fontWeight: '700' as const },
+  registerLinkBold: { color: '#1A1D2E', fontWeight: '700' as const },
 });

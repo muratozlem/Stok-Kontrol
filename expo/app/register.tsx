@@ -10,6 +10,7 @@ import {
   Animated,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react-native';
@@ -21,22 +22,6 @@ const GREEN  = '#7DC242';
 const YELLOW = '#F5C225';
 const ORANGE = '#F07D28';
 
-function LogoGrid({ size = 64 }: { size?: number }) {
-  const radius = size * 0.12;
-  const gap = 5;
-  return (
-    <View style={{ width: size, height: size, gap }}>
-      <View style={{ flex: 1, flexDirection: 'row', gap }}>
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: BLUE }} />
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: YELLOW }} />
-      </View>
-      <View style={{ flex: 1, flexDirection: 'row', gap }}>
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: GREEN }} />
-        <View style={{ flex: 1, borderRadius: radius, backgroundColor: ORANGE }} />
-      </View>
-    </View>
-  );
-}
 
 export default function RegisterScreen() {
   const { register, isRegistering, registerError, resetRegisterError } = useAuth();
@@ -105,10 +90,9 @@ export default function RegisterScreen() {
 
           <Animated.View style={[styles.logoArea, { transform: [{ scale: logoScale }] }]}>
             <View style={styles.logoWrapper}>
-              <LogoGrid size={72} />
+              <Image source={require('../assets/images/logo.png')} style={{ width: 72, height: 72, borderRadius: 16 }} />
             </View>
-            <Text style={styles.appName}>Torbalı Gf</Text>
-            <Text style={styles.appTagline}>Stok Kontrol</Text>
+            <Text style={styles.appName}>Stok Kontrol</Text>
           </Animated.View>
         </View>
 
@@ -342,14 +326,14 @@ const styles = StyleSheet.create({
   infoNoteDot: { width: 6, height: 6, borderRadius: 3 },
   infoNoteText: { flex: 1, fontSize: 12, color: '#1A5F70', lineHeight: 17, fontWeight: '500' as const },
   registerButton: {
-    backgroundColor: ORANGE,
+    backgroundColor: '#1A1D2E',
     borderRadius: 14,
     height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: ORANGE,
+    shadowColor: '#1A1D2E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
@@ -359,5 +343,5 @@ const styles = StyleSheet.create({
   registerButtonText: { color: Colors.white, fontSize: 16, fontWeight: '700' as const },
   loginLink: { marginTop: 18, alignItems: 'center' },
   loginLinkText: { fontSize: 14, color: Colors.textSecondary },
-  loginLinkBold: { color: ORANGE, fontWeight: '700' as const },
+  loginLinkBold: { color: '#1A1D2E', fontWeight: '700' as const },
 });
