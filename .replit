@@ -47,5 +47,3 @@ publicDir = "expo/dist"
 [userenv]
 
 [userenv.shared]
-EXPO_PUBLIC_SUPABASE_URL = "https://bobitrbxiojvwkzeuxgi.supabase.co"
-EXPO_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJvYml0cmJ4aW9qdndremV1eGdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTgyNTgsImV4cCI6MjA5MTMzNDI1OH0.THpTrDKxxoG8W1S_gjEWhLMStH5QLJN3dndvcBQOosI"
