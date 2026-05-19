@@ -58,6 +58,17 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- ============================================================
+-- stock_alerts: Kritik stok mail cooldown takibi (24 saat)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS stock_alerts (
+  id SERIAL PRIMARY KEY,
+  product_id TEXT NOT NULL UNIQUE,
+  last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
+
+-- ============================================================
 -- RLS (Row Level Security) Etkinleştirme
 -- ============================================================
 ALTER TABLE products     ENABLE ROW LEVEL SECURITY;
@@ -65,6 +76,7 @@ ALTER TABLE warehouses   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_alerts ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- RLS Politikaları — anon key ile tam erişim
@@ -84,5 +96,8 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='anon_all_profiles') THEN
     CREATE POLICY "anon_all_profiles" ON profiles FOR ALL TO anon USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='anon_all_stock_alerts') THEN
+    CREATE POLICY "anon_all_stock_alerts" ON stock_alerts FOR ALL TO anon USING (true) WITH CHECK (true);
   END IF;
 END $$;
