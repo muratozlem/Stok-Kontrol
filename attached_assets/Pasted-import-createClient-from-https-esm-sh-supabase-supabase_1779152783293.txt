@@ -1,0 +1,188 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")!;
+const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL")!;
+
+const COOLDOWN_HOURS = 24;
+
+Deno.serve(async (req) => {
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // İstek gövdesinden tetikleyen ürün bilgisini al
+    let triggeredProductId: string | null = null;
+    try {
+      const body = await req.json();
+      triggeredProductId = body?.product_id || null;
+    } catch {}
+
+    // Tüm ürünleri ve stoklarını çek
+    const { data: products, error: prodErr } = await supabase
+      .from("products")
+      .select("id, name, barcode, unit, critical_stock_level");
+    if (prodErr) throw prodErr;
+
+    const { data: inventory, error: invErr } = await supabase
+      .from("inventory")
+      .select("product_id, quantity");
+    if (invErr) throw invErr;
+
+    // Toplam stok hesapla
+    const stockMap: Record<string, number> = {};
+    for (const row of inventory || []) {
+      stockMap[row.product_id] = (stockMap[row.product_id] || 0) + row.quantity;
+    }
+
+    // Kritik seviyedeki ürünleri bul
+    const allCritical = (products || []).filter((p) => {
+      const total = stockMap[p.id] || 0;
+      return total <= p.critical_stock_level;
+    });
+
+    if (allCritical.length === 0) {
+      return new Response(JSON.stringify({ message: "Kritik stok yok" }), { status: 200 });
+    }
+
+    // Eğer belirli bir ürün tetiklediyse sadece onu kontrol et, değilse hepsini
+    const toCheck = triggeredProductId
+      ? allCritical.filter((p) => p.id === triggeredProductId)
+      : allCritical;
+
+    if (toCheck.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "Tetikleyen ürün artık kritik değil" }),
+        { status: 200 }
+      );
+    }
+
+    // alert_logs tablosundan son 24 saatteki gönderilenleri kontrol et
+    const cooldownCutoff = new Date(Date.now() - COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
+    const { data: recentAlerts } = await supabase
+      .from("alert_logs")
+      .select("product_id, sent_at")
+      .gte("sent_at", cooldownCutoff);
+
+    const recentlySent = new Set((recentAlerts || []).map((a: any) => a.product_id));
+
+    // 24 saat geçmiş veya hiç gönderilmemiş ürünleri filtrele
+    const productsToAlert = toCheck.filter((p) => !recentlySent.has(p.id));
+
+    if (productsToAlert.length === 0) {
+      return new Response(
+        JSON.stringify({ message: "Bu ürünler için son 24 saat içinde zaten mail gönderildi", skipped: toCheck.length }),
+        { status: 200 }
+      );
+    }
+
+    // HTML mail oluştur
+    const now = new Date().toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" });
+    const isTriggered = !!triggeredProductId;
+
+    const tableRows = productsToAlert.map((p) => {
+      const current = stockMap[p.id] || 0;
+      const statusColor = current === 0 ? "#dc2626" : "#f59e0b";
+      return `
+        <tr>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0f0f0;font-weight:600;color:#111827;">${p.name}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0f0f0;color:#6b7280;">${p.barcode || "—"}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0f0f0;text-align:center;">
+            <span style="background:${statusColor}22;color:${statusColor};font-weight:700;font-size:16px;padding:4px 12px;border-radius:6px;">${current}</span>
+          </td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0f0f0;text-align:center;color:#6b7280;">${p.critical_stock_level}</td>
+          <td style="padding:12px 16px;border-bottom:1px solid #f0f0f0;color:#6b7280;">${p.unit}</td>
+        </tr>`;
+    }).join("");
+
+    const subject = isTriggered && productsToAlert.length === 1
+      ? `⚠️ Kritik Stok: ${productsToAlert[0].name}`
+      : `⚠️ Kritik Stok Uyarısı — ${productsToAlert.length} ürün`;
+
+    const headerTitle = isTriggered && productsToAlert.length === 1
+      ? `⚠️ ${productsToAlert[0].name} kritik seviyeye düştü!`
+      : `⚠️ ${productsToAlert.length} ürün kritik stok seviyesinde`;
+
+    const htmlBody = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f1f5f9;margin:0;padding:24px;">
+  <div style="max-width:620px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="background:linear-gradient(135deg,#1E2A3A 0%,#2d3f56 100%);padding:32px;">
+      <div style="font-size:13px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Torbalı GF Stok Kontrol</div>
+      <h1 style="color:#ffffff;margin:0;font-size:20px;line-height:1.4;">${headerTitle}</h1>
+      <div style="color:#94a3b8;font-size:13px;margin-top:8px;">${now}</div>
+    </div>
+
+    <div style="padding:28px 32px;">
+      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="padding:10px 16px;text-align:left;color:#374151;font-weight:600;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Ürün</th>
+            <th style="padding:10px 16px;text-align:left;color:#374151;font-weight:600;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Barkod</th>
+            <th style="padding:10px 16px;text-align:center;color:#374151;font-weight:600;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Mevcut</th>
+            <th style="padding:10px 16px;text-align:center;color:#374151;font-weight:600;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Min.</th>
+            <th style="padding:10px 16px;text-align:left;color:#374151;font-weight:600;border-bottom:2px solid #e5e7eb;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Birim</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+
+      <div style="margin-top:24px;padding:16px 20px;background:#fef2f2;border-radius:10px;border-left:4px solid #dc2626;display:flex;align-items:flex-start;gap:12px;">
+        <div style="color:#991b1b;font-size:13px;line-height:1.6;">
+          <strong>Acil stok yenileme gerekiyor.</strong><br>
+          Lütfen ilgili ürünlerin stoklarını en kısa sürede tamamlayınız.
+          ${recentlySent.size > 0 ? `<br><span style="color:#b45309;">Not: ${recentlySent.size} ürün için 24 saat içinde zaten uyarı gönderildi.</span>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+      <p style="margin:0;color:#9ca3af;font-size:12px;">Torbalı GF Stok Kontrol — Otomatik Anlık Bildirim Sistemi</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    // Mail gönder
+    const mailRes = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "Stok Kontrol <onboarding@resend.dev>",
+        to: [ADMIN_EMAIL],
+        subject,
+        html: htmlBody,
+      }),
+    });
+
+    const mailData = await mailRes.json();
+    if (!mailRes.ok) throw new Error(`Resend hatası: ${JSON.stringify(mailData)}`);
+
+    // Her ürün için ayrı log kaydı oluştur (24h cooldown takibi için)
+    const logRows = productsToAlert.map((p) => ({
+      product_id: p.id,
+      recipient: ADMIN_EMAIL,
+    }));
+    await supabase.from("alert_logs").insert(logRows);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        alerted_products: productsToAlert.map((p) => p.name),
+        skipped_cooldown: [...recentlySent].length,
+        mail_id: mailData.id,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    console.error("Edge function hatası:", err);
+    return new Response(
+      JSON.stringify({ error: String(err) }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+});
