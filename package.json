@@ -1,6 +1,5 @@
 {
-  "name": "workspace",
-  "module": "index.ts",
+  "name": "stok-kontrol",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -8,8 +7,5 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
-  "dependencies": {
-    "expo": "~54.0.27"
   }
 }

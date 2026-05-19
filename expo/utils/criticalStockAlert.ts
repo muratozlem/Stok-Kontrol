@@ -143,15 +143,3 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
   if (ok) await upsertAlertTimestamp(info.productId);
 }
 
-export async function forceSendCriticalStockAlert(
-  info: CriticalProductInfo
-): Promise<{ ok: boolean; reason?: string; sentTo?: string }> {
-  if (!isSupabaseConfigured) return { ok: false, reason: 'Supabase yapılandırılmamış' };
-
-  const ok = await sendViaResend(info);
-  if (ok) {
-    await upsertAlertTimestamp(info.productId);
-    return { ok: true, sentTo: ALERT_TO_EMAIL };
-  }
-  return { ok: false, reason: 'Resend gönderim hatası — loglara bakın' };
-}
