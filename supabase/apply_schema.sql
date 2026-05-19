@@ -1,10 +1,12 @@
 -- ============================================================
--- Torbalı GF Stok Kontrol — Supabase Schema
+-- Stok Kontrol — Supabase Schema
 -- Bu SQL'i Supabase Dashboard > SQL Editor'de çalıştırın:
--- https://supabase.com/dashboard/project/bobitrbxiojvwkzeuxgi/sql
+-- https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql
 -- ============================================================
 
--- Ana tablolar (zaten varsa atla)
+-- ============================================================
+-- Ana tablolar
+-- ============================================================
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -42,17 +44,32 @@ CREATE TABLE IF NOT EXISTS transactions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS users (
+-- ============================================================
+-- profiles: Kullanıcı hesapları (auth sistemi bu tabloyu kullanır)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
-  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  username TEXT DEFAULT '',
   password_hash TEXT NOT NULL,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
--- alert_logs: Her ürün için son mail gönderim zamanını takip eder
--- Bu tablo 24 saatlik spam koruması için kritik!
+-- stock_alerts: Kritik stok mail cooldown takibi (24 saat)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS stock_alerts (
+  id SERIAL PRIMARY KEY,
+  product_id TEXT NOT NULL UNIQUE,
+  last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
+
+-- ============================================================
+-- alert_logs: Tüm mail gönderim geçmişi (yedek kayıt)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS alert_logs (
   id SERIAL PRIMARY KEY,
@@ -63,15 +80,20 @@ CREATE TABLE IF NOT EXISTS alert_logs (
 
 CREATE INDEX IF NOT EXISTS idx_alert_logs_product_sent ON alert_logs(product_id, sent_at DESC);
 
--- RLS
-ALTER TABLE products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE warehouses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory ENABLE ROW LEVEL SECURITY;
+-- ============================================================
+-- RLS (Row Level Security) Etkinleştirme
+-- ============================================================
+ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE warehouses  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE alert_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alert_logs  ENABLE ROW LEVEL SECURITY;
 
--- Politikalar (varsa hata vermesin diye DO BLOCK kullan)
+-- ============================================================
+-- RLS Politikaları — anon key ile tam erişim
+-- ============================================================
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='products' AND policyname='anon_all_products') THEN
     CREATE POLICY "anon_all_products" ON products FOR ALL TO anon USING (true) WITH CHECK (true);
@@ -85,21 +107,16 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='transactions' AND policyname='anon_all_transactions') THEN
     CREATE POLICY "anon_all_transactions" ON transactions FOR ALL TO anon USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='users' AND policyname='anon_all_users') THEN
-    CREATE POLICY "anon_all_users" ON users FOR ALL TO anon USING (true) WITH CHECK (true);
+  -- profiles: herkes kayıt olabilsin ve giriş yapabilsin
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='anon_all_profiles') THEN
+    CREATE POLICY "anon_all_profiles" ON profiles FOR ALL TO anon USING (true) WITH CHECK (true);
   END IF;
+  -- stock_alerts: cooldown takibi için anon erişim gerekli
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='anon_all_stock_alerts') THEN
+    CREATE POLICY "anon_all_stock_alerts" ON stock_alerts FOR ALL TO anon USING (true) WITH CHECK (true);
+  END IF;
+  -- alert_logs: sadece service role
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='alert_logs' AND policyname='service_all_alert_logs') THEN
     CREATE POLICY "service_all_alert_logs" ON alert_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
   END IF;
 END $$;
-
--- ============================================================
--- Edge Function Tetikleyici (SQL ile)
--- NOT: Bu kısım opsiyonel - uygulama zaten anlık tetikliyor
--- pg_net extension aktifse kullanılabilir
--- ============================================================
--- SELECT net.http_post(
---   url := 'https://bobitrbxiojvwkzeuxgi.supabase.co/functions/v1/send-critical-stock-alert',
---   headers := '{"Content-Type":"application/json","Authorization":"Bearer SERVICE_KEY"}'::jsonb,
---   body := '{"product_id":"URUN_ID"}'::jsonb
--- );

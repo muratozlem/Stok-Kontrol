@@ -18,12 +18,14 @@ async function getAdminEmails(): Promise<string[]> {
       .eq('role', 'admin')
       .eq('status', 'approved');
     if (error) {
-      console.log('[CriticalAlert] Admin email fetch error:', error.message);
+      console.log('[CriticalAlert] profiles sorgu hatası:', error.message);
       return [];
     }
-    return (data ?? [])
+    const emails = (data ?? [])
       .map((r: { email: string }) => String(r.email ?? ''))
       .filter((e: string) => e.length > 0);
+    console.log('[CriticalAlert] Admin e-postalar:', emails);
+    return emails;
   } catch (e) {
     console.log('[CriticalAlert] Admin email error:', (e as Error).message);
     return [];
@@ -37,23 +39,28 @@ async function getLastAlertSentAt(productId: string): Promise<string | null> {
       .select('last_sent_at')
       .eq('product_id', productId)
       .maybeSingle();
-    if (error) return null;
+    if (error) {
+      console.log('[CriticalAlert] stock_alerts sorgu hatası:', error.message);
+      return null;
+    }
     return data?.last_sent_at ?? null;
-  } catch {
+  } catch (e) {
+    console.log('[CriticalAlert] getLastAlertSentAt error:', (e as Error).message);
     return null;
   }
 }
 
 async function upsertAlertTimestamp(productId: string): Promise<void> {
   try {
-    await supabase
+    const { error } = await supabase
       .from('stock_alerts')
       .upsert(
         { product_id: productId, last_sent_at: new Date().toISOString() },
         { onConflict: 'product_id' }
       );
-  } catch {
-    // silent
+    if (error) console.log('[CriticalAlert] stock_alerts upsert hatası:', error.message);
+  } catch (e) {
+    console.log('[CriticalAlert] upsertAlertTimestamp error:', (e as Error).message);
   }
 }
 
@@ -101,7 +108,7 @@ function buildEmailHtml(info: CriticalProductInfo): string {
 async function sendViaResend(to: string[], subject: string, html: string): Promise<boolean> {
   const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
   if (!apiKey) {
-    console.log('[CriticalAlert] EXPO_PUBLIC_RESEND_API_KEY tanımlı değil');
+    console.log('[CriticalAlert] EXPO_PUBLIC_RESEND_API_KEY tanımlı değil — Expo build ayarlarını kontrol edin');
     return false;
   }
   try {
@@ -118,9 +125,12 @@ async function sendViaResend(to: string[], subject: string, html: string): Promi
         html,
       }),
     });
+    const responseText = await res.text();
     if (!res.ok) {
-      const text = await res.text();
-      console.log('[CriticalAlert] Resend hata:', res.status, text.substring(0, 200));
+      console.log('[CriticalAlert] Resend API hatası:', res.status, responseText);
+      // onboarding@resend.dev yalnızca Resend hesap sahibinin kendi e-postasına gönderebilir.
+      // 403 hatası alıyorsanız: Resend Dashboard > Domains bölümünden kendi domaininizi doğrulayın
+      // ve from adresini 'Stok Kontrol <noreply@sizin-domain.com>' olarak güncelleyin.
       return false;
     }
     console.log('[CriticalAlert] E-posta gönderildi ->', to.join(', '));
@@ -135,19 +145,21 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
   if (!isSupabaseConfigured) return;
   if (info.totalStock > info.criticalLevel) return;
 
+  console.log('[CriticalAlert] Kritik stok tespit edildi:', info.productName, '- stok:', info.totalStock, '/ kritik:', info.criticalLevel);
+
   const lastSent = await getLastAlertSentAt(info.productId);
   if (lastSent) {
     const elapsed = Date.now() - new Date(lastSent).getTime();
     if (elapsed < ALERT_COOLDOWN_MS) {
       const remainingHours = Math.ceil((ALERT_COOLDOWN_MS - elapsed) / (60 * 60 * 1000));
-      console.log('[CriticalAlert] 24 saat dolmadı, atlanıyor:', info.productName, 'kalan:', remainingHours, 'saat');
+      console.log('[CriticalAlert] 24 saat dolmadı, atlanıyor:', info.productName, '- kalan:', remainingHours, 'saat');
       return;
     }
   }
 
   const adminEmails = await getAdminEmails();
   if (adminEmails.length === 0) {
-    console.log('[CriticalAlert] Onaylı admin e-postası bulunamadı');
+    console.log('[CriticalAlert] Onaylı admin e-postası bulunamadı — profiles tablosunda role=admin ve status=approved kaydı var mı?');
     return;
   }
 
@@ -168,5 +180,5 @@ export async function forceSendCriticalStockAlert(info: CriticalProductInfo): Pr
     await upsertAlertTimestamp(info.productId);
     return { ok: true, sentTo: adminEmails };
   }
-  return { ok: false, reason: 'Resend gönderim hatası (loglara bakın)' };
+  return { ok: false, reason: 'Resend gönderim hatası — loglara bakın' };
 }
