@@ -10,6 +10,26 @@ interface CriticalProductInfo {
   criticalLevel: number;
 }
 
+async function getAdminEmails(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('role', 'admin')
+      .eq('status', 'approved');
+    if (error) {
+      console.log('[CriticalAlert] Admin email fetch error:', error.message);
+      return [];
+    }
+    return (data ?? [])
+      .map((r: { email: string }) => String(r.email ?? ''))
+      .filter((e: string) => e.length > 0);
+  } catch (e) {
+    console.log('[CriticalAlert] Admin email error:', (e as Error).message);
+    return [];
+  }
+}
+
 async function getLastAlertSentAt(productId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase
@@ -78,7 +98,7 @@ function buildEmailHtml(info: CriticalProductInfo): string {
 </html>`.trim();
 }
 
-async function sendViaResend(to: string, subject: string, html: string): Promise<boolean> {
+async function sendViaResend(to: string[], subject: string, html: string): Promise<boolean> {
   const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
   if (!apiKey) {
     console.log('[CriticalAlert] EXPO_PUBLIC_RESEND_API_KEY tanımlı değil');
@@ -93,7 +113,7 @@ async function sendViaResend(to: string, subject: string, html: string): Promise
       },
       body: JSON.stringify({
         from: 'Stok Kontrol <onboarding@resend.dev>',
-        to: [to],
+        to,
         subject,
         html,
       }),
@@ -103,7 +123,7 @@ async function sendViaResend(to: string, subject: string, html: string): Promise
       console.log('[CriticalAlert] Resend hata:', res.status, text.substring(0, 200));
       return false;
     }
-    console.log('[CriticalAlert] E-posta gönderildi ->', to);
+    console.log('[CriticalAlert] E-posta gönderildi ->', to.join(', '));
     return true;
   } catch (e) {
     console.log('[CriticalAlert] Resend network error:', (e as Error).message);
@@ -115,12 +135,6 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
   if (!isSupabaseConfigured) return;
   if (info.totalStock > info.criticalLevel) return;
 
-  const adminEmail = process.env.EXPO_PUBLIC_ADMIN_EMAIL;
-  if (!adminEmail) {
-    console.log('[CriticalAlert] EXPO_PUBLIC_ADMIN_EMAIL tanımlı değil');
-    return;
-  }
-
   const lastSent = await getLastAlertSentAt(info.productId);
   if (lastSent) {
     const elapsed = Date.now() - new Date(lastSent).getTime();
@@ -131,21 +145,28 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
     }
   }
 
+  const adminEmails = await getAdminEmails();
+  if (adminEmails.length === 0) {
+    console.log('[CriticalAlert] Onaylı admin e-postası bulunamadı');
+    return;
+  }
+
   const subject = `Kritik Stok: ${info.productName} (${info.totalStock}${info.unit ? ' ' + info.unit : ''} kaldı)`;
   const html = buildEmailHtml(info);
-  const ok = await sendViaResend(adminEmail, subject, html);
+  const ok = await sendViaResend(adminEmails, subject, html);
   if (ok) await upsertAlertTimestamp(info.productId);
 }
 
-export async function forceSendCriticalStockAlert(info: CriticalProductInfo): Promise<{ ok: boolean; reason?: string }> {
-  const adminEmail = process.env.EXPO_PUBLIC_ADMIN_EMAIL;
-  if (!adminEmail) return { ok: false, reason: 'EXPO_PUBLIC_ADMIN_EMAIL tanımlı değil' };
+export async function forceSendCriticalStockAlert(info: CriticalProductInfo): Promise<{ ok: boolean; reason?: string; sentTo?: string[] }> {
+  if (!isSupabaseConfigured) return { ok: false, reason: 'Supabase yapılandırılmamış' };
+  const adminEmails = await getAdminEmails();
+  if (adminEmails.length === 0) return { ok: false, reason: 'Onaylı admin e-postası bulunamadı' };
   const subject = `[TEST] Kritik Stok: ${info.productName}`;
   const html = buildEmailHtml(info);
-  const ok = await sendViaResend(adminEmail, subject, html);
+  const ok = await sendViaResend(adminEmails, subject, html);
   if (ok) {
     await upsertAlertTimestamp(info.productId);
-    return { ok: true };
+    return { ok: true, sentTo: adminEmails };
   }
   return { ok: false, reason: 'Resend gönderim hatası (loglara bakın)' };
 }
