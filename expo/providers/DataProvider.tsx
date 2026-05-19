@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { Product, Warehouse, InventoryItem, Transaction, TransactionType } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
-import { maybeSendCriticalStockAlert } from '@/utils/criticalStockAlert';
 
 async function fetchProducts(): Promise<Product[]> {
   if (!isSupabaseConfigured) {
@@ -413,36 +412,6 @@ export const [DataProvider, useData] = createContextHook(() => {
       }
 
       console.log('[Data] Stock transaction:', type, quantity, 'for product', productId);
-
-      try {
-        const { data: invRows } = await supabase
-          .from('inventory')
-          .select('quantity')
-          .eq('product_id', productId);
-        const totalStock = (invRows ?? []).reduce((sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0), 0);
-
-        const { data: prod } = await supabase
-          .from('products')
-          .select('name, unit, critical_stock_level')
-          .eq('id', productId)
-          .maybeSingle();
-
-        if (prod) {
-          const criticalLevel = prod.critical_stock_level ?? 0;
-          if (totalStock <= criticalLevel) {
-            console.log('[Data] Kritik stok algilandi, e-posta kontrol ediliyor:', prod.name);
-            maybeSendCriticalStockAlert({
-              productId,
-              productName: String(prod.name ?? ''),
-              unit: String(prod.unit ?? ''),
-              totalStock,
-              criticalLevel,
-            }).catch((e) => console.log('[Data] alert error:', (e as Error).message));
-          }
-        }
-      } catch (e) {
-        console.log('[Data] Kritik stok kontrol hatasi:', (e as Error).message);
-      }
 
       return {
         id: txData.id,

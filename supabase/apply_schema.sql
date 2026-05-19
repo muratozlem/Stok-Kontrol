@@ -58,38 +58,13 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- ============================================================
--- stock_alerts: Kritik stok mail cooldown takibi (24 saat)
--- ============================================================
-CREATE TABLE IF NOT EXISTS stock_alerts (
-  id SERIAL PRIMARY KEY,
-  product_id TEXT NOT NULL UNIQUE,
-  last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
-
--- ============================================================
--- alert_logs: Tüm mail gönderim geçmişi (yedek kayıt)
--- ============================================================
-CREATE TABLE IF NOT EXISTS alert_logs (
-  id SERIAL PRIMARY KEY,
-  product_id TEXT NOT NULL,
-  sent_at TIMESTAMPTZ DEFAULT NOW(),
-  recipient TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_alert_logs_product_sent ON alert_logs(product_id, sent_at DESC);
-
--- ============================================================
 -- RLS (Row Level Security) Etkinleştirme
 -- ============================================================
-ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE warehouses  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE warehouses   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stock_alerts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE alert_logs  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles     ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- RLS Politikaları — anon key ile tam erişim
@@ -107,16 +82,7 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='transactions' AND policyname='anon_all_transactions') THEN
     CREATE POLICY "anon_all_transactions" ON transactions FOR ALL TO anon USING (true) WITH CHECK (true);
   END IF;
-  -- profiles: herkes kayıt olabilsin ve giriş yapabilsin
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='anon_all_profiles') THEN
     CREATE POLICY "anon_all_profiles" ON profiles FOR ALL TO anon USING (true) WITH CHECK (true);
-  END IF;
-  -- stock_alerts: cooldown takibi için anon erişim gerekli
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='anon_all_stock_alerts') THEN
-    CREATE POLICY "anon_all_stock_alerts" ON stock_alerts FOR ALL TO anon USING (true) WITH CHECK (true);
-  END IF;
-  -- alert_logs: sadece service role
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='alert_logs' AND policyname='service_all_alert_logs') THEN
-    CREATE POLICY "service_all_alert_logs" ON alert_logs FOR ALL TO service_role USING (true) WITH CHECK (true);
   END IF;
 END $$;
