@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -30,6 +31,12 @@ export default function SettingsPage() {
   const { currentUser, isAdmin, logout } = useAuth();
 
   const handleLogout = useCallback(() => {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Oturumunuz kapatılacak. Devam etmek istiyor musunuz?')) {
+        logout();
+      }
+      return;
+    }
     Alert.alert(
       'Çıkış Yap',
       'Oturumunuz kapatılacak. Devam etmek istiyor musunuz?',
