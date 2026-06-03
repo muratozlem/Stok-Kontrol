@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "2cb8zXd2dgix3UO8mw3TM"
+uri = "file://expo/assets/images/logo.png"
+type = "image"
+title = "Stok Kontrol — Uygulama Logosu"
