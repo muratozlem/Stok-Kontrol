@@ -386,17 +386,24 @@ export default function ReportsPage() {
     mutationFn: async () => {
       console.log('[Reports] Generating PDF...');
       const html = buildHtml();
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      console.log('[Reports] PDF generated at:', uri);
-
       const fileName = `stok-raporu-${new Date()
         .toISOString()
         .slice(0, 16)
         .replace(/[:T]/g, '-')}.pdf`;
 
       if (Platform.OS === 'web') {
-        return { uri, fileName, shared: false };
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const tab = window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        if (!tab) {
+          Alert.alert('Açılamadı', 'Yeni sekme açılamadı. Lütfen tarayıcı popup engelleyicisini kapatın.');
+        }
+        return { fileName, shared: true };
       }
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      console.log('[Reports] PDF generated at:', uri);
 
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
@@ -411,13 +418,8 @@ export default function ReportsPage() {
     },
     onSuccess: (res) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      if (Platform.OS === 'web') {
-        Alert.alert('Rapor Hazır', 'PDF oluşturuldu. Yeni sekmede açılıyor.');
-        if (typeof window !== 'undefined') {
-          window.open(res.uri, '_blank');
-        }
-      } else if (!res.shared) {
-        Alert.alert('Rapor Hazır', `Dosya oluşturuldu:\n${res.uri}`);
+      if (Platform.OS !== 'web' && !res.shared) {
+        Alert.alert('Rapor Hazır', `Dosya oluşturuldu:\n${res.uri ?? res.fileName}`);
       }
     },
     onError: (err) => {
@@ -486,34 +488,23 @@ export default function ReportsPage() {
 
   const isGenerating = generatePdfMutation.isPending || generateExcelMutation.isPending;
 
-  const handleDownload = useCallback(() => {
+  const handlePdf = useCallback(() => {
     if (reportRows.length === 0) {
-      Alert.alert(
-        'Veri Yok',
-        'Seçilen filtrelere uygun stok bulunamadı. Farklı depo veya ürün seçin.'
-      );
+      Alert.alert('Veri Yok', 'Seçilen filtrelere uygun stok bulunamadı.');
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Rapor Formatı',
-      'Raporu hangi formatta indirmek istiyorsunuz?',
-      [
-        {
-          text: 'PDF',
-          onPress: () => generatePdfMutation.mutate(),
-        },
-        {
-          text: 'Excel (.csv)',
-          onPress: () => generateExcelMutation.mutate(),
-        },
-        {
-          text: 'İptal',
-          style: 'cancel',
-        },
-      ]
-    );
-  }, [reportRows, generatePdfMutation, generateExcelMutation]);
+    generatePdfMutation.mutate();
+  }, [reportRows, generatePdfMutation]);
+
+  const handleExcel = useCallback(() => {
+    if (reportRows.length === 0) {
+      Alert.alert('Veri Yok', 'Seçilen filtrelere uygun stok bulunamadı.');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    generateExcelMutation.mutate();
+  }, [reportRows, generateExcelMutation]);
 
   if (products.length === 0 && warehouses.length === 0) {
     return (
@@ -664,27 +655,36 @@ export default function ReportsPage() {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.downloadBtn}
-          onPress={handleDownload}
+          style={[styles.downloadBtn, styles.downloadBtnPdf]}
+          onPress={handlePdf}
           activeOpacity={0.9}
           disabled={isGenerating}
-          testID="download-report-btn"
+          testID="download-pdf-btn"
         >
-          <LinearGradient
-            colors={[Colors.gradientStart, Colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.downloadGradient}
-          >
-            {isGenerating ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : (
-              <>
-                <Download size={20} color={Colors.white} strokeWidth={2.6} />
-                <Text style={styles.downloadText}>Raporu İndir</Text>
-              </>
-            )}
-          </LinearGradient>
+          {generatePdfMutation.isPending ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <>
+              <FileText size={18} color={Colors.white} strokeWidth={2.6} />
+              <Text style={styles.downloadText}>PDF</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.downloadBtn, styles.downloadBtnExcel]}
+          onPress={handleExcel}
+          activeOpacity={0.9}
+          disabled={isGenerating}
+          testID="download-excel-btn"
+        >
+          {generateExcelMutation.isPending ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <>
+              <Sheet size={18} color={Colors.white} strokeWidth={2.6} />
+              <Text style={styles.downloadText}>Excel</Text>
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -833,22 +833,30 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
+    flexDirection: 'row',
+    gap: 10,
   },
   downloadBtn: {
+    flex: 1,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  downloadGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
     paddingVertical: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  downloadBtnPdf: {
+    backgroundColor: Colors.primary,
+    shadowColor: Colors.primary,
+  },
+  downloadBtnExcel: {
+    backgroundColor: '#1D6F42',
+    shadowColor: '#1D6F42',
   },
   downloadText: {
     fontSize: 16,
