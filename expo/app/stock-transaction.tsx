@@ -104,18 +104,25 @@ export default function StockTransactionPage() {
     if (txType === 'OUT') {
       const productName = products.find(p => p.id === selectedProduct)?.name ?? 'Seçili ürün';
       const warehouseName = warehouses.find(w => w.id === selectedWarehouse)?.name ?? 'Seçili depo';
-      Alert.alert(
-        'Stok Çıkışı Onayı',
-        `"${productName}" ürününden ${qty} adet "${warehouseName}" deposundan çıkış yapılacak.\n\nMevcut stok: ${currentStock}\nİşlem sonrası: ${currentStock - qty}\n\nEmin misiniz?`,
-        [
-          { text: 'İptal', style: 'cancel' },
-          {
-            text: 'Onayla',
-            style: 'destructive',
-            onPress: () => executeTransaction(qty),
-          },
-        ]
-      );
+      if (Platform.OS === 'web') {
+        const confirmed = window.confirm(
+          `"${productName}" ürününden ${qty} adet "${warehouseName}" deposundan çıkış yapılacak.\n\nMevcut stok: ${currentStock} → İşlem sonrası: ${currentStock - qty}\n\nEmin misiniz?`
+        );
+        if (confirmed) executeTransaction(qty);
+      } else {
+        Alert.alert(
+          'Stok Çıkışı Onayı',
+          `"${productName}" ürününden ${qty} adet "${warehouseName}" deposundan çıkış yapılacak.\n\nMevcut stok: ${currentStock}\nİşlem sonrası: ${currentStock - qty}\n\nEmin misiniz?`,
+          [
+            { text: 'İptal', style: 'cancel' },
+            {
+              text: 'Onayla',
+              style: 'destructive',
+              onPress: () => executeTransaction(qty),
+            },
+          ]
+        );
+      }
     } else {
       executeTransaction(qty);
     }
