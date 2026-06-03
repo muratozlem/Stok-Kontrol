@@ -82,43 +82,43 @@ function buildEmailHtml(info: CriticalProductInfo): string {
 </html>`.trim();
 }
 
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/send-critical-stock-alert`;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
 async function sendViaResend(info: CriticalProductInfo): Promise<boolean> {
-  const apiKey = process.env.EXPO_PUBLIC_RESEND_API_KEY;
-  if (!apiKey) {
-    console.log('[CriticalAlert] EXPO_PUBLIC_RESEND_API_KEY tanımlı değil');
+  if (!SUPABASE_URL) {
+    console.log('[CriticalAlert] SUPABASE_URL tanımlı değil');
     return false;
   }
 
-  const unit = info.unit ? ` ${info.unit}` : '';
-  const subject = `Kritik Stok: ${info.productName} (${info.totalStock}${unit} kaldı)`;
-  const html = buildEmailHtml(info);
-
   try {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch(EDGE_FUNCTION_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
-        from: 'Stok Kontrol <onboarding@resend.dev>',
-        to: [ALERT_TO_EMAIL],
-        subject,
-        html,
+        productId: info.productId,
+        productName: info.productName,
+        unit: info.unit,
+        totalStock: info.totalStock,
+        criticalLevel: info.criticalLevel,
       }),
     });
 
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      console.log('[CriticalAlert] Resend hatası:', res.status, JSON.stringify(data));
+      console.log('[CriticalAlert] Edge Function hatası:', res.status, JSON.stringify(data));
       return false;
     }
 
     console.log('[CriticalAlert] Mail gönderildi → ' + ALERT_TO_EMAIL + ' | id:', (data as { id?: string }).id ?? '-');
     return true;
   } catch (e) {
-    console.log('[CriticalAlert] Resend network error:', (e as Error).message);
+    console.log('[CriticalAlert] Edge Function network error:', (e as Error).message);
     return false;
   }
 }
