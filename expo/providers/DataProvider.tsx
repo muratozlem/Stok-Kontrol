@@ -185,16 +185,20 @@ export const [DataProvider, useData] = createContextHook(() => {
     try {
       channel = supabase
         .channel('public-db-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+          console.log('[Realtime] products changed:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['products'] });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'warehouses' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'warehouses' }, (payload) => {
+          console.log('[Realtime] warehouses changed:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['warehouses'] });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+          console.log('[Realtime] inventory changed:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['inventory'] });
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+          console.log('[Realtime] transactions changed:', payload.eventType);
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
         })
         .subscribe((status) => {
@@ -209,7 +213,7 @@ export const [DataProvider, useData] = createContextHook(() => {
       queryClient.invalidateQueries({ queryKey: ['warehouses'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    }, 30000);
+    }, 8000);
 
     return () => {
       if (channel) { try { supabase.removeChannel(channel); } catch {} }
