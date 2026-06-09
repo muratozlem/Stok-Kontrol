@@ -161,6 +161,10 @@ export default function LoginScreen() {
                 )}
               </TouchableOpacity>
 
+              <TouchableOpacity onPress={() => router.push('/forgot-password' as never)} style={styles.forgotLink} testID="go-to-forgot">
+                <Text style={styles.forgotLinkText}>Şifremi Unuttum</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity onPress={() => router.replace('/register')} style={styles.registerLink} testID="go-to-register">
                 <Text style={styles.registerLinkText}>
                   Hesabın yok mu?{' '}
@@ -266,7 +270,9 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.7 },
   loginButtonText: { color: Colors.white, fontSize: 16, fontWeight: '700' as const },
-  registerLink: { marginTop: 20, alignItems: 'center' },
+  forgotLink: { marginTop: 12, alignItems: 'center' },
+  forgotLinkText: { fontSize: 14, color: '#3ABEDB', fontWeight: '600' as const },
+  registerLink: { marginTop: 12, alignItems: 'center' },
   registerLinkText: { fontSize: 14, color: Colors.textSecondary },
   registerLinkBold: { color: '#1A1D2E', fontWeight: '700' as const },
 });

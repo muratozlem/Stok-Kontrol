@@ -69,6 +69,16 @@ CREATE TABLE IF NOT EXISTS stock_alerts (
 CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
 
 -- ============================================================
+-- password_reset_tokens: Şifre sıfırlama OTP kodları (15 dk)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  email TEXT PRIMARY KEY,
+  code TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
 -- RLS (Row Level Security) Etkinleştirme
 -- ============================================================
 ALTER TABLE products     ENABLE ROW LEVEL SECURITY;
@@ -77,6 +87,7 @@ ALTER TABLE inventory    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- RLS Politikaları — anon key ile tam erişim
