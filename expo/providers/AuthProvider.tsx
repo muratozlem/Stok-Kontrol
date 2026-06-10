@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
+import { hashPassword } from '@/utils/hashPassword';
 
 export interface AppUser {
   id: string;
@@ -14,33 +15,6 @@ export interface AppUser {
 }
 
 const SESSION_KEY = 'stokapp_session';
-
-function hashPassword(password: string): string {
-  const input = password + '_stokapp_salt_2024';
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash + char) | 0;
-  }
-  let result = '';
-  const seed = Math.abs(hash);
-  let h1 = seed;
-  let h2 = seed ^ 0x6b8b4567;
-  let h3 = seed ^ 0x327b23c6;
-  let h4 = seed ^ 0x643c9869;
-  for (let i = 0; i < input.length; i++) {
-    const c = input.charCodeAt(i);
-    h1 = (h1 ^ c) * 0x01000193;
-    h2 = (h2 ^ c) * 0x01000193;
-    h3 = (h3 ^ c) * 0x01000193;
-    h4 = (h4 ^ c) * 0x01000193;
-  }
-  const parts = [h1 >>> 0, h2 >>> 0, h3 >>> 0, h4 >>> 0];
-  for (const p of parts) {
-    result += p.toString(16).padStart(8, '0');
-  }
-  return result;
-}
 
 function generateUuid(): string {
   const hex = '0123456789abcdef';

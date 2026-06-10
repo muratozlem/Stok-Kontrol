@@ -69,12 +69,12 @@ CREATE TABLE IF NOT EXISTS stock_alerts (
 CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
 
 -- ============================================================
--- password_reset_tokens: Şifre sıfırlama OTP kodları (15 dk)
+-- password_reset_requests: Şifre sıfırlama talepleri (admin onaylı)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-  email TEXT PRIMARY KEY,
-  code TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
+CREATE TABLE IF NOT EXISTS password_reset_requests (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -110,5 +110,8 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='anon_all_stock_alerts') THEN
     CREATE POLICY "anon_all_stock_alerts" ON stock_alerts FOR ALL TO anon USING (true) WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='anon_all_password_reset_requests') THEN
+    CREATE POLICY "anon_all_password_reset_requests" ON password_reset_requests FOR ALL TO anon USING (true) WITH CHECK (true);
   END IF;
 END $$;
