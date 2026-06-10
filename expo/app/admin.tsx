@@ -115,11 +115,17 @@ export default function AdminScreen() {
 
   const deleteUserMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('profiles').delete().eq('id', id);
+      console.log('[Admin] Deleting user id:', id);
+      const { error, data } = await supabase.from('profiles').delete().eq('id', id).select();
+      console.log('[Admin] Delete result:', JSON.stringify(data), error?.message);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
+    },
+    onError: (err: Error) => {
+      console.log('[Admin] Delete error:', err.message);
+      Alert.alert('Hata', 'Kullanıcı silinemedi: ' + err.message);
     },
   });
 
@@ -178,27 +184,17 @@ export default function AdminScreen() {
     );
   }, [updateStatusMutation]);
 
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
   const handleDeleteUser = useCallback((user: ProfileRow) => {
-    if (user.id === currentUser?.id) {
-      Alert.alert('Uyarı', 'Kendi hesabınızı silemezsiniz.');
-      return;
-    }
-    Alert.alert(
-      'Kullanıcıyı Sil',
-      `${user.email} adresine ait hesap kalıcı olarak silinecek.`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Sil',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            deleteUserMutation.mutate(user.id);
-          },
-        },
-      ]
-    );
-  }, [deleteUserMutation, currentUser?.id]);
+    setConfirmDeleteId(user.id);
+  }, []);
+
+  const handleConfirmDelete = useCallback((user: ProfileRow) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    setConfirmDeleteId(null);
+    deleteUserMutation.mutate(user.id);
+  }, [deleteUserMutation]);
 
   const handleClearAll = useCallback(() => {
     Alert.alert(
@@ -422,7 +418,11 @@ export default function AdminScreen() {
                   key={u.id}
                   user={u}
                   isSelf={u.id === currentUser?.id}
+                  confirmingDelete={confirmDeleteId === u.id}
                   onDelete={() => handleDeleteUser(u)}
+                  onConfirmDelete={() => handleConfirmDelete(u)}
+                  onCancelDelete={() => setConfirmDeleteId(null)}
+                  deleteLoading={deleteUserMutation.isPending && confirmDeleteId === u.id}
                 />
               ))}
             </View>
@@ -614,11 +614,19 @@ function PendingCard({
 function UserCard({
   user,
   isSelf,
+  confirmingDelete,
   onDelete,
+  onConfirmDelete,
+  onCancelDelete,
+  deleteLoading,
 }: {
   user: ProfileRow;
   isSelf: boolean;
+  confirmingDelete: boolean;
   onDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+  deleteLoading: boolean;
 }) {
   const date = new Date(user.created_at).toLocaleDateString('tr-TR');
   const isAdminUser = user.role === 'admin';
@@ -653,11 +661,38 @@ function UserCard({
           <Text style={styles.userMeta}>Üyelik: {date}</Text>
         </View>
       </View>
-      {!isSelf && (
+
+      {!isSelf && !confirmingDelete && (
         <TouchableOpacity style={styles.deleteUserBtn} onPress={onDelete} activeOpacity={0.8}>
           <Trash2 size={14} color={Colors.danger} strokeWidth={2.4} />
           <Text style={styles.deleteUserText}>Hesabı Sil</Text>
         </TouchableOpacity>
+      )}
+
+      {!isSelf && confirmingDelete && (
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmText}>Bu hesabı kalıcı olarak silmek istediğinize emin misiniz?</Text>
+          <View style={styles.confirmRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={onCancelDelete} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>İptal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmDeleteBtn, deleteLoading && { opacity: 0.7 }]}
+              onPress={onConfirmDelete}
+              disabled={deleteLoading}
+              activeOpacity={0.8}
+            >
+              {deleteLoading ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <>
+                  <Trash2 size={14} color={Colors.white} strokeWidth={2.4} />
+                  <Text style={styles.confirmDeleteText}>Evet, Sil</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
     </View>
   );
@@ -874,4 +909,26 @@ const styles = StyleSheet.create({
   resetInput: { flex: 1, fontSize: 14, color: Colors.text },
   eyeBtn: { padding: 4 },
   passError: { fontSize: 11, color: Colors.danger, marginTop: 6, fontWeight: '500' as const },
+  confirmBox: {
+    marginTop: 12,
+    backgroundColor: Colors.dangerLight,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FFCCCC',
+  },
+  confirmText: { fontSize: 12.5, color: Colors.danger, fontWeight: '600' as const, marginBottom: 10, textAlign: 'center' },
+  confirmRow: { flexDirection: 'row', gap: 8 },
+  confirmCancelBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  confirmCancelText: { fontSize: 13, fontWeight: '700' as const, color: Colors.textSecondary },
+  confirmDeleteBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: Colors.danger, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center', gap: 6,
+  },
+  confirmDeleteText: { fontSize: 13, fontWeight: '700' as const, color: Colors.white },
 });
