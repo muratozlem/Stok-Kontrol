@@ -55,7 +55,7 @@ function AuthGate() {
   useEffect(() => {
     if (!isReady) return;
 
-    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register';
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'forgot-password';
 
     if (!isLoggedIn && !inAuthGroup) {
       console.log('[AuthGate] No session, redirecting to register');
@@ -105,6 +105,7 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
         <Stack.Screen
           name="admin"
           options={{
