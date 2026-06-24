@@ -1,19 +1,19 @@
 'use client'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
-let client: ReturnType<typeof createSupabaseClient> | null = null
+let client: ReturnType<typeof createBrowserClient> | null = null
 
 export function createClient() {
   if (client) return client
-  client = createSupabaseClient(
+  client = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        storageKey: 'sk-dashboard-auth',
+      cookieOptions: {
+        sameSite: 'none',
+        secure: true,
+        path: '/',
+        maxAge: 60 * 60 * 24 * 7,
       },
     }
   )
