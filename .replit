@@ -47,3 +47,5 @@ publicDir = "expo/dist"
 [userenv]
 
 [userenv.shared]
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVzdGVmampmY2Nlamhic2tldnZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MjAwMDcsImV4cCI6MjA5NTk5NjAwN30.iMTJXoEgrN0nNfNHT4JWIxYKkcllIB3P5luoZ3ZtQWE"
+NEXT_PUBLIC_SUPABASE_URL = "https://estefjjfccejhbskevvm.supabase.co"
