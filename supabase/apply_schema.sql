@@ -1,7 +1,7 @@
 -- ============================================================
--- Stok Kontrol — Supabase Schema
+-- Stok Kontrol — Supabase Schema (Supabase Auth versiyonu)
 -- Bu SQL'i Supabase Dashboard > SQL Editor'de çalıştırın:
--- https://supabase.com/dashboard/project/YOUR_PROJECT_ID/sql
+-- https://supabase.com/dashboard/project/estefjjfccejhbskevvm/sql
 -- ============================================================
 
 -- ============================================================
@@ -45,13 +45,14 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 -- ============================================================
--- profiles: Kullanıcı hesapları (auth sistemi bu tabloyu kullanır)
+-- profiles: Supabase Auth ile entegre kullanıcı profilleri
+-- NOT: id, auth.users.id ile eşleşmelidir (UUID).
+-- password_hash artık bu tabloda tutulmaz — Supabase Auth yönetir.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS profiles (
-  id TEXT PRIMARY KEY,
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   username TEXT DEFAULT '',
-  password_hash TEXT NOT NULL,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -73,45 +74,130 @@ CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
 -- ============================================================
 CREATE TABLE IF NOT EXISTS password_reset_requests (
   id TEXT PRIMARY KEY,
-  email TEXT NOT NULL,
+  email TEXT NOT NULL CHECK (email NOT LIKE '%\%%' AND email NOT LIKE '%_%' ESCAPE '\'),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
--- RLS (Row Level Security) Etkinleştirme
+-- Yardımcı güvenlik fonksiyonları
 -- ============================================================
-ALTER TABLE products     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE warehouses   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE inventory    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE stock_alerts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_approved_user()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND (status = 'approved' OR role = 'admin')
+  );
+$$;
 
 -- ============================================================
--- RLS Politikaları — anon key ile tam erişim
+-- RLS Etkinleştirme
+-- ============================================================
+ALTER TABLE products              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE warehouses            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_alerts          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_reset_requests ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================
+-- Eski anon politikalarını temizle
 -- ============================================================
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='products' AND policyname='anon_all_products') THEN
-    CREATE POLICY "anon_all_products" ON products FOR ALL TO anon USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "anon_all_products"                  ON products;
+  DROP POLICY IF EXISTS "anon_all_warehouses"                ON warehouses;
+  DROP POLICY IF EXISTS "anon_all_inventory"                 ON inventory;
+  DROP POLICY IF EXISTS "anon_all_transactions"              ON transactions;
+  DROP POLICY IF EXISTS "anon_all_profiles"                  ON profiles;
+  DROP POLICY IF EXISTS "anon_all_stock_alerts"              ON stock_alerts;
+  DROP POLICY IF EXISTS "anon_all_password_reset_requests"   ON password_reset_requests;
+END $$;
+
+-- ============================================================
+-- profiles politikaları
+-- INSERT/DELETE yalnızca Edge Function (service role) yapar — burada tanımlanmaz.
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='profiles_select_authenticated') THEN
+    CREATE POLICY "profiles_select_authenticated"
+      ON profiles FOR SELECT TO authenticated USING (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='warehouses' AND policyname='anon_all_warehouses') THEN
-    CREATE POLICY "anon_all_warehouses" ON warehouses FOR ALL TO anon USING (true) WITH CHECK (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='profiles_update_admin') THEN
+    CREATE POLICY "profiles_update_admin"
+      ON profiles FOR UPDATE TO authenticated USING (is_admin());
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='inventory' AND policyname='anon_all_inventory') THEN
-    CREATE POLICY "anon_all_inventory" ON inventory FOR ALL TO anon USING (true) WITH CHECK (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='profiles_delete_admin') THEN
+    CREATE POLICY "profiles_delete_admin"
+      ON profiles FOR DELETE TO authenticated USING (is_admin());
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='transactions' AND policyname='anon_all_transactions') THEN
-    CREATE POLICY "anon_all_transactions" ON transactions FOR ALL TO anon USING (true) WITH CHECK (true);
+END $$;
+
+-- ============================================================
+-- Ürün / Depo / Stok / İşlem politikaları
+-- Yalnızca onaylı kullanıcılar veya admin erişebilir.
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='products' AND policyname='products_approved_users') THEN
+    CREATE POLICY "products_approved_users"
+      ON products FOR ALL TO authenticated
+      USING (is_approved_user()) WITH CHECK (is_approved_user());
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='profiles' AND policyname='anon_all_profiles') THEN
-    CREATE POLICY "anon_all_profiles" ON profiles FOR ALL TO anon USING (true) WITH CHECK (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='warehouses' AND policyname='warehouses_approved_users') THEN
+    CREATE POLICY "warehouses_approved_users"
+      ON warehouses FOR ALL TO authenticated
+      USING (is_approved_user()) WITH CHECK (is_approved_user());
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='anon_all_stock_alerts') THEN
-    CREATE POLICY "anon_all_stock_alerts" ON stock_alerts FOR ALL TO anon USING (true) WITH CHECK (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='inventory' AND policyname='inventory_approved_users') THEN
+    CREATE POLICY "inventory_approved_users"
+      ON inventory FOR ALL TO authenticated
+      USING (is_approved_user()) WITH CHECK (is_approved_user());
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='anon_all_password_reset_requests') THEN
-    CREATE POLICY "anon_all_password_reset_requests" ON password_reset_requests FOR ALL TO anon USING (true) WITH CHECK (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='transactions' AND policyname='transactions_approved_users') THEN
+    CREATE POLICY "transactions_approved_users"
+      ON transactions FOR ALL TO authenticated
+      USING (is_approved_user()) WITH CHECK (is_approved_user());
+  END IF;
+END $$;
+
+-- ============================================================
+-- stock_alerts politikaları (Edge Function service role kullanır)
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='stock_alerts_admin') THEN
+    CREATE POLICY "stock_alerts_admin"
+      ON stock_alerts FOR ALL TO authenticated USING (is_admin());
+  END IF;
+END $$;
+
+-- ============================================================
+-- password_reset_requests politikaları
+-- Kayıtsız kullanıcılar talep gönderebilir (INSERT anon).
+-- Admin onaylayıp reddedebilir.
+-- ============================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_anon_insert') THEN
+    CREATE POLICY "reset_req_anon_insert"
+      ON password_reset_requests FOR INSERT TO anon WITH CHECK (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_admin_all') THEN
+    CREATE POLICY "reset_req_admin_all"
+      ON password_reset_requests FOR ALL TO authenticated USING (is_admin());
   END IF;
 END $$;

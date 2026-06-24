@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
-import { hashPassword } from '@/utils/hashPassword';
 
 export interface AppUser {
   id: string;
@@ -12,25 +10,6 @@ export interface AppUser {
   role: 'admin' | 'user';
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
-}
-
-const SESSION_KEY = 'stokapp_session';
-
-function generateUuid(): string {
-  const hex = '0123456789abcdef';
-  const randHex = (len: number) =>
-    Array.from({ length: len }, () => hex[Math.floor(Math.random() * 16)]).join('');
-  const s1 = randHex(8);
-  const s2 = randHex(4);
-  const s3 = '4' + randHex(3);
-  const yChars = '89ab';
-  const s4 = yChars[Math.floor(Math.random() * 4)] + randHex(3);
-  const s5 = randHex(12);
-  return `${s1}-${s2}-${s3}-${s4}-${s5}`;
-}
-
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function rowToUser(row: Record<string, unknown>): AppUser {
@@ -48,61 +27,43 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [isReady, setIsReady] = useState<boolean>(false);
 
+  const loadProfile = useCallback(async (userId: string): Promise<AppUser | null> => {
+    if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error || !data) return null;
+    return rowToUser(data);
+  }, []);
+
   useEffect(() => {
-    let mounted = true;
-
-    async function restoreSession() {
-      try {
-        const stored = await AsyncStorage.getItem(SESSION_KEY);
-        if (!stored) {
-          console.log('[Auth] No stored session');
-          return;
-        }
-
-        const sessionUser: AppUser = JSON.parse(stored);
-        console.log('[Auth] Restoring session for:', sessionUser.email);
-
-        if (!isSupabaseConfigured) {
-          if (mounted) setCurrentUser(sessionUser);
-          return;
-        }
-
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', sessionUser.id)
-          .maybeSingle();
-
-        if (error || !profile) {
-          console.log('[Auth] Session user not found in DB, clearing');
-          await AsyncStorage.removeItem(SESSION_KEY);
-          return;
-        }
-
-        const user = rowToUser(profile);
-        if (user.status !== 'approved' && user.role !== 'admin') {
-          console.log('[Auth] User not approved anymore, clearing');
-          await AsyncStorage.removeItem(SESSION_KEY);
-          return;
-        }
-
-        if (mounted) {
-          setCurrentUser(user);
-          console.log('[Auth] Session restored:', user.email);
-        }
-      } catch (e) {
-        console.log('[Auth] Session restore error:', e);
-      } finally {
-        if (mounted) setIsReady(true);
-      }
+    if (!isSupabaseConfigured) {
+      setIsReady(true);
+      return;
     }
 
-    restoreSession();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await loadProfile(session.user.id);
+        if (profile && (profile.status === 'approved' || profile.role === 'admin')) {
+          setCurrentUser(profile);
+        } else {
+          await supabase.auth.signOut();
+        }
+      }
+      setIsReady(true);
+    });
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadProfile]);
 
   const registerMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
@@ -112,73 +73,37 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       const cleanEmail = email.trim().toLowerCase();
 
-      if (!isValidEmail(cleanEmail)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         throw new Error('Geçerli bir e-posta adresi giriniz');
       }
-
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('id')
-        .ilike('email', cleanEmail)
-        .maybeSingle();
-
-      if (existing) {
-        throw new Error('Bu e-posta adresi zaten kayıtlı');
+      if (/[%_\\]/.test(cleanEmail)) {
+        throw new Error('E-posta adresi geçersiz karakter içeriyor');
+      }
+      if (password.length < 6) {
+        throw new Error('Şifre en az 6 karakter olmalı');
       }
 
-      const passwordHash = hashPassword(password);
+      const { data, error } = await supabase.functions.invoke('register-user', {
+        body: { email: cleanEmail, password },
+      });
 
-      const { count } = await supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true });
+      if (error) throw new Error(error.message ?? 'Kayıt oluşturulamadı');
+      if (data?.error) throw new Error(data.error);
 
-      const isFirstUser = !count || count === 0;
-      const role: 'admin' | 'user' = isFirstUser ? 'admin' : 'user';
-      const status: 'pending' | 'approved' = isFirstUser ? 'approved' : 'pending';
+      const status = data.status as 'pending' | 'approved';
 
-      const id = generateUuid();
-      const username = cleanEmail.split('@')[0] ?? cleanEmail;
-
-      const { error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id,
+      if (status === 'approved') {
+        const { data: authData, error: signInErr } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
-          username,
-          password_hash: passwordHash,
-          role,
-          status,
+          password,
         });
-
-      if (insertError) {
-        console.log('[Auth] Profile insert error:', insertError);
-        if (insertError.message?.includes('duplicate') || insertError.message?.includes('unique')) {
-          throw new Error('Bu e-posta adresi zaten kayıtlı');
-        }
-        throw new Error('Kayıt oluşturulamadı: ' + insertError.message);
+        if (signInErr || !authData.user) throw new Error('Giriş yapılamadı');
+        const profile = await loadProfile(authData.user.id);
+        if (profile) setCurrentUser(profile);
       }
 
-      const user: AppUser = {
-        id,
-        email: cleanEmail,
-        username,
-        role,
-        status,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (isFirstUser) {
-        await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(user));
-        console.log('[Auth] İlk kullanıcı admin olarak kayıt edildi:', user.email);
-      } else {
-        console.log('[Auth] Kayıt talebi oluşturuldu, admin onayı bekleniyor:', user.email);
-      }
-      return user;
-    },
-    onSuccess: (user) => {
-      if (user.status === 'approved') {
-        setCurrentUser(user);
-      }
+      console.log('[Auth] Kayıt tamamlandı, durum:', status);
+      return { status, email: cleanEmail };
     },
   });
 
@@ -189,45 +114,49 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
 
       const cleanEmail = email.trim().toLowerCase();
-      if (!isValidEmail(cleanEmail)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         throw new Error('Geçerli bir e-posta adresi giriniz');
       }
 
-      const passwordHash = hashPassword(password);
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
 
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .ilike('email', cleanEmail)
-        .eq('password_hash', passwordHash)
-        .maybeSingle();
-
-      if (error) {
-        console.log('[Auth] Login query error:', error.message);
-        if (error.message?.includes('fetch') || error.message?.includes('network') || error.message?.includes('Failed')) {
+      if (authError) {
+        if (
+          authError.message?.includes('Invalid login credentials') ||
+          authError.message?.includes('invalid_credentials')
+        ) {
+          throw new Error('E-posta veya şifre hatalı');
+        }
+        if (authError.message?.includes('fetch') || authError.message?.includes('network')) {
           throw new Error('Sunucuya bağlanılamıyor. İnternet bağlantınızı kontrol edin.');
         }
-        throw new Error('Giriş hatası: ' + error.message);
+        throw new Error('Giriş hatası: ' + authError.message);
       }
 
+      if (!authData.user) throw new Error('Giriş başarısız');
+
+      const profile = await loadProfile(authData.user.id);
       if (!profile) {
-        throw new Error('E-posta veya şifre hatalı');
+        await supabase.auth.signOut();
+        throw new Error('Kullanıcı profili bulunamadı');
       }
 
-      const user = rowToUser(profile);
-
-      if (user.role !== 'admin') {
-        if (user.status === 'pending') {
+      if (profile.role !== 'admin') {
+        if (profile.status === 'pending') {
+          await supabase.auth.signOut();
           throw new Error('Hesabınız henüz admin tarafından onaylanmadı.');
         }
-        if (user.status === 'rejected') {
+        if (profile.status === 'rejected') {
+          await supabase.auth.signOut();
           throw new Error('Üyelik talebiniz reddedildi.');
         }
       }
 
-      await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(user));
-      console.log('[Auth] Giriş başarılı:', user.email);
-      return user;
+      console.log('[Auth] Giriş başarılı:', profile.email);
+      return profile;
     },
     onSuccess: (user) => {
       setCurrentUser(user);
@@ -235,7 +164,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   });
 
   const logout = useCallback(async () => {
-    await AsyncStorage.removeItem(SESSION_KEY);
+    await supabase.auth.signOut();
     setCurrentUser(null);
     console.log('[Auth] Çıkış yapıldı');
   }, []);

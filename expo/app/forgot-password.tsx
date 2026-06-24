@@ -50,20 +50,14 @@ export default function ForgotPasswordScreen() {
     if (!cleanEmail) { setError('E-posta adresi boş bırakılamaz'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) { setError('Geçerli bir e-posta adresi giriniz'); return; }
 
+    if (/[%_\\]/.test(cleanEmail)) {
+      setError('E-posta adresi geçersiz karakter içeriyor');
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured) throw new Error('Sistem yapılandırması eksik');
-
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id')
-        .ilike('email', cleanEmail)
-        .limit(1);
-
-      if (!profiles || profiles.length === 0) {
-        setSubmitted(true);
-        return;
-      }
 
       const { error: insertError } = await supabase
         .from('password_reset_requests')

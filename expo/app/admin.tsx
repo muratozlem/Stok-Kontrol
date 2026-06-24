@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   RefreshControl,
   TextInput,
@@ -33,7 +32,6 @@ import Colors from '@/constants/colors';
 import { useAuth, AppUser } from '@/providers/AuthProvider';
 import { useData } from '@/providers/DataProvider';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
-import { hashPassword } from '@/utils/hashPassword';
 
 interface ProfileRow {
   id: string;
@@ -116,32 +114,34 @@ export default function AdminScreen() {
   const deleteUserMutation = useMutation({
     mutationFn: async (id: string) => {
       console.log('[Admin] Deleting user id:', id);
-      const { error, data } = await supabase.from('profiles').delete().eq('id', id).select();
-      console.log('[Admin] Delete result:', JSON.stringify(data), error?.message);
-      if (error) throw error;
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { targetUserId: id },
+      });
+      if (error) throw new Error(error.message ?? 'Kullanıcı silinemedi');
+      if (data?.error) throw new Error(data.error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-profiles'] });
     },
     onError: (err: Error) => {
       console.log('[Admin] Delete error:', err.message);
-      Alert.alert('Hata', 'Kullanıcı silinemedi: ' + err.message);
     },
   });
 
   const approveResetMutation = useMutation({
     mutationFn: async ({ request, newPass }: { request: ResetRequest; newPass: string }) => {
-      const ph = hashPassword(newPass);
-      const { error: pErr } = await supabase
+      const { data: profile, error: profileErr } = await supabase
         .from('profiles')
-        .update({ password_hash: ph })
-        .ilike('email', request.email);
-      if (pErr) throw pErr;
-      const { error: rErr } = await supabase
-        .from('password_reset_requests')
-        .update({ status: 'approved' })
-        .eq('id', request.id);
-      if (rErr) throw rErr;
+        .select('id')
+        .eq('email', request.email)
+        .maybeSingle();
+      if (profileErr || !profile) throw new Error('Kullanıcı bulunamadı');
+
+      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+        body: { requestId: request.id, targetUserId: profile.id, newPassword: newPass },
+      });
+      if (error) throw new Error(error.message ?? 'Şifre güncellenemedi');
+      if (data?.error) throw new Error(data.error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-reset-requests'] });
@@ -167,21 +167,8 @@ export default function AdminScreen() {
   }, [updateStatusMutation]);
 
   const handleReject = useCallback((user: ProfileRow) => {
-    Alert.alert(
-      'Talebi Reddet',
-      `${user.email} adresinin üyelik talebi reddedilecek.`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Reddet',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            updateStatusMutation.mutate({ id: user.id, status: 'rejected' });
-          },
-        },
-      ]
-    );
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    updateStatusMutation.mutate({ id: user.id, status: 'rejected' });
   }, [updateStatusMutation]);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -196,46 +183,25 @@ export default function AdminScreen() {
     deleteUserMutation.mutate(user.id);
   }, [deleteUserMutation]);
 
-  const handleClearAll = useCallback(() => {
-    Alert.alert(
-      'TÜM VERİLERİ SİL',
-      'Tüm ürünler, depolar, stok ve işlem kayıtları kalıcı olarak silinecek. Bu işlem geri alınamaz!',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Hepsini Sil',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              await clearAllData();
-              Alert.alert('Tamamlandı', 'Tüm veriler silindi.');
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : 'Bilinmeyen hata';
-              Alert.alert('Hata', msg);
-            }
-          },
-        },
-      ]
-    );
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [clearAllLoading, setClearAllLoading] = useState(false);
+
+  const handleClearAllConfirm = useCallback(async () => {
+    try {
+      setClearAllLoading(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      await clearAllData();
+    } catch (e) {
+      console.log('[Admin] Clear all error:', e instanceof Error ? e.message : e);
+    } finally {
+      setClearAllLoading(false);
+      setConfirmClearAll(false);
+    }
   }, [clearAllData]);
 
   const handleRejectReset = useCallback((req: ResetRequest) => {
-    Alert.alert(
-      'Talebi Reddet',
-      `${req.email} adresinin şifre sıfırlama talebi reddedilecek.`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Reddet',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            rejectResetMutation.mutate(req.id);
-          },
-        },
-      ]
-    );
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    rejectResetMutation.mutate(req.id);
   }, [rejectResetMutation]);
 
   const isRefreshing =
@@ -431,22 +397,55 @@ export default function AdminScreen() {
 
         <Text style={styles.sectionLabel}>TEHLİKELİ BÖLGE</Text>
         <View style={[styles.card, styles.cardDanger]}>
-          <TouchableOpacity
-            style={styles.dangerRow}
-            onPress={handleClearAll}
-            activeOpacity={0.7}
-            testID="admin-clear-all-btn"
-          >
-            <View style={styles.dangerIconWrap}>
-              <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dangerTitle}>Tüm Verileri Sil</Text>
-              <Text style={styles.dangerSubtitle}>
-                Ürünler, depolar, stok ve işlem kayıtları silinir. Geri alınamaz.
+          {!confirmClearAll ? (
+            <TouchableOpacity
+              style={styles.dangerRow}
+              onPress={() => setConfirmClearAll(true)}
+              activeOpacity={0.7}
+              testID="admin-clear-all-btn"
+            >
+              <View style={styles.dangerIconWrap}>
+                <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dangerTitle}>Tüm Verileri Sil</Text>
+                <Text style={styles.dangerSubtitle}>
+                  Ürünler, depolar, stok ve işlem kayıtları silinir. Geri alınamaz.
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ padding: 4 }}>
+              <Text style={styles.dangerTitle}>Tüm veriler kalıcı olarak silinecek!</Text>
+              <Text style={[styles.dangerSubtitle, { marginBottom: 12 }]}>
+                Bu işlem geri alınamaz. Emin misiniz?
               </Text>
+              <View style={styles.confirmRow}>
+                <TouchableOpacity
+                  style={styles.confirmCancelBtn}
+                  onPress={() => setConfirmClearAll(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.confirmCancelText}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.confirmDeleteBtn, clearAllLoading && { opacity: 0.7 }]}
+                  onPress={handleClearAllConfirm}
+                  disabled={clearAllLoading}
+                  activeOpacity={0.8}
+                >
+                  {clearAllLoading ? (
+                    <ActivityIndicator size="small" color={Colors.white} />
+                  ) : (
+                    <>
+                      <Trash2 size={14} color={Colors.white} strokeWidth={2.4} />
+                      <Text style={styles.confirmDeleteText}>Evet, Sil</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </TouchableOpacity>
+          )}
         </View>
 
         <View style={{ height: 40 }} />
@@ -470,6 +469,7 @@ function ResetRequestCard({
   const [newPassword, setNewPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [passError, setPassError] = useState('');
+  const [confirmReject, setConfirmReject] = useState(false);
 
   const date = new Date(request.created_at).toLocaleDateString('tr-TR', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -520,45 +520,65 @@ function ResetRequestCard({
         </View>
       )}
 
-      <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.rejectBtn]}
-          onPress={onReject}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          <X size={16} color={Colors.danger} strokeWidth={2.6} />
-          <Text style={styles.rejectBtnText}>Reddet</Text>
-        </TouchableOpacity>
+      {confirmReject ? (
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmText}>Bu şifre sıfırlama talebini reddetmek istediğinize emin misiniz?</Text>
+          <View style={styles.confirmRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmReject(false)} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>İptal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmDeleteBtn, loading && { opacity: 0.7 }]}
+              onPress={() => { setConfirmReject(false); onReject(); }}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <X size={14} color={Colors.white} strokeWidth={2.4} />
+              <Text style={styles.confirmDeleteText}>Evet, Reddet</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.rejectBtn]}
+            onPress={() => setConfirmReject(true)}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <X size={16} color={Colors.danger} strokeWidth={2.6} />
+            <Text style={styles.rejectBtnText}>Reddet</Text>
+          </TouchableOpacity>
 
-        {!expanded ? (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.setPassBtn]}
-            onPress={() => setExpanded(true)}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            <KeyRound size={16} color={Colors.white} strokeWidth={2.6} />
-            <Text style={styles.approveBtnText}>Şifre Belirle</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.approveBtn, loading && { opacity: 0.7 }]}
-            onPress={handleApprovePress}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <>
-                <Check size={16} color={Colors.white} strokeWidth={2.8} />
-                <Text style={styles.approveBtnText}>Onayla</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
+          {!expanded ? (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.setPassBtn]}
+              onPress={() => setExpanded(true)}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <KeyRound size={16} color={Colors.white} strokeWidth={2.6} />
+              <Text style={styles.approveBtnText}>Şifre Belirle</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.approveBtn, loading && { opacity: 0.7 }]}
+              onPress={handleApprovePress}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <>
+                  <Check size={16} color={Colors.white} strokeWidth={2.8} />
+                  <Text style={styles.approveBtnText}>Onayla</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -576,6 +596,7 @@ function PendingCard({
 }) {
   const u = user as ProfileRow;
   const date = new Date(u.created_at).toLocaleDateString('tr-TR');
+  const [confirmReject, setConfirmReject] = useState(false);
   return (
     <View style={styles.userCard}>
       <View style={styles.userTop}>
@@ -587,26 +608,46 @@ function PendingCard({
           <Text style={styles.userMeta}>Talep tarihi: {date}</Text>
         </View>
       </View>
-      <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.rejectBtn]}
-          onPress={onReject}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          <X size={16} color={Colors.danger} strokeWidth={2.6} />
-          <Text style={styles.rejectBtnText}>Reddet</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, styles.approveBtn]}
-          onPress={onApprove}
-          disabled={loading}
-          activeOpacity={0.8}
-        >
-          <Check size={16} color={Colors.white} strokeWidth={2.8} />
-          <Text style={styles.approveBtnText}>Onayla</Text>
-        </TouchableOpacity>
-      </View>
+      {confirmReject ? (
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmText}>Bu üyelik talebini reddetmek istediğinize emin misiniz?</Text>
+          <View style={styles.confirmRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmReject(false)} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>İptal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmDeleteBtn, loading && { opacity: 0.7 }]}
+              onPress={() => { setConfirmReject(false); onReject(); }}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <X size={14} color={Colors.white} strokeWidth={2.4} />
+              <Text style={styles.confirmDeleteText}>Evet, Reddet</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.rejectBtn]}
+            onPress={() => setConfirmReject(true)}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <X size={16} color={Colors.danger} strokeWidth={2.6} />
+            <Text style={styles.rejectBtnText}>Reddet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.approveBtn]}
+            onPress={onApprove}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            <Check size={16} color={Colors.white} strokeWidth={2.8} />
+            <Text style={styles.approveBtnText}>Onayla</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
