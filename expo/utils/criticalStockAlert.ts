@@ -8,6 +8,7 @@ export interface CriticalProductInfo {
   unit: string;
   totalStock: number;
   criticalLevel: number;
+  locationId?: string | null;
 }
 
 async function getLastAlertSentAt(productId: string): Promise<string | null> {

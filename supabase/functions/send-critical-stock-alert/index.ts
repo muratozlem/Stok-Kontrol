@@ -5,9 +5,12 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
 function buildEmailHtml(info: {
-  productName: string; unit: string; totalStock: number; criticalLevel: number;
+  productName: string; unit: string; totalStock: number; criticalLevel: number; locationName?: string;
 }): string {
   const unit = info.unit ? ` ${info.unit}` : '';
+  const locationLine = info.locationName
+    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Lokasyon</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;">${info.locationName}</td></tr>`
+    : '';
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8" /></head>
@@ -23,6 +26,7 @@ function buildEmailHtml(info: {
         Bu ürün kritik stok seviyesinin altına düştü. Lütfen en kısa sürede stok takviyesi yapınız.
       </p>
       <table style="width:100%;border-collapse:collapse;">
+        ${locationLine}
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kalan Stok</td>
           <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#D32F2F;font-size:18px;">${info.totalStock}${unit}</td>
@@ -62,7 +66,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { productId, productName, unit, totalStock, criticalLevel } = body;
+    const { productId, productName, unit, totalStock, criticalLevel, locationId } = body;
 
     if (!productId || !productName) {
       return new Response(JSON.stringify({ error: 'productId ve productName zorunludur' }), { status: 400 });
@@ -70,11 +74,28 @@ Deno.serve(async (req: Request) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: adminProfiles, error: profilesError } = await supabase
+    let locationName: string | undefined;
+    if (locationId) {
+      const { data: locRow } = await supabase
+        .from('locations')
+        .select('name')
+        .eq('id', locationId)
+        .maybeSingle();
+      locationName = (locRow as { name?: string } | null)?.name;
+    }
+
+    let profileQuery = supabase
       .from('profiles')
       .select('email')
-      .in('role', ['super_admin', 'admin'])
       .eq('status', 'approved');
+
+    if (locationId) {
+      profileQuery = profileQuery.or(`role.eq.super_admin,and(role.eq.admin,location_id.eq.${locationId})`);
+    } else {
+      profileQuery = profileQuery.in('role', ['super_admin', 'admin']);
+    }
+
+    const { data: adminProfiles, error: profilesError } = await profileQuery;
 
     if (profilesError) {
       console.error('[send-critical-stock-alert] Profil sorgu hatası:', profilesError.message);
@@ -86,18 +107,23 @@ Deno.serve(async (req: Request) => {
       .filter(Boolean);
 
     if (recipients.length === 0) {
-      console.log('[send-critical-stock-alert] Alıcı bulunamadı (super_admin/admin yok)');
+      console.log('[send-critical-stock-alert] Alıcı yok | lokasyon:', locationId ?? '(yok)');
       return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }));
     }
 
     const htmlContent = buildEmailHtml({
-      productName, unit: unit ?? '', totalStock: totalStock ?? 0, criticalLevel: criticalLevel ?? 0,
+      productName,
+      unit: unit ?? '',
+      totalStock: totalStock ?? 0,
+      criticalLevel: criticalLevel ?? 0,
+      locationName,
     });
 
+    const locationLabel = locationName ? ` [${locationName}]` : '';
     const emailPayload = {
       from: 'Stok Kontrol <onboarding@resend.dev>',
       to: recipients,
-      subject: `⚠️ Kritik Stok: ${productName}`,
+      subject: `⚠️ Kritik Stok${locationLabel}: ${productName}`,
       html: htmlContent,
     };
 
@@ -117,7 +143,11 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Email gönderilemedi', details: resendData }), { status: 500 });
     }
 
-    console.log('[send-critical-stock-alert] Mail gönderildi ->', recipients.length, 'alıcı:', recipients.join(', '));
+    console.log(
+      '[send-critical-stock-alert] Mail ->', recipients.length, 'alıcı:',
+      recipients.join(', '), '| lokasyon:', locationName ?? '(yok)',
+    );
+
     return new Response(JSON.stringify({
       ok: true,
       id: (resendData as { id?: string }).id,

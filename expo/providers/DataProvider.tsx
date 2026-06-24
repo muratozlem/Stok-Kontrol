@@ -425,13 +425,20 @@ export const [DataProvider, useData] = createContextHook(() => {
       try {
         const { data: invRows } = await supabase.from('inventory').select('quantity').eq('product_id', productId);
         const totalStock = (invRows ?? []).reduce((sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0), 0);
-        const { data: prod } = await supabase.from('products').select('name, unit, critical_stock_level').eq('id', productId).maybeSingle();
+        const [{ data: prod }, { data: whRow }] = await Promise.all([
+          supabase.from('products').select('name, unit, critical_stock_level').eq('id', productId).maybeSingle(),
+          supabase.from('warehouses').select('location_id').eq('id', warehouseId).maybeSingle(),
+        ]);
         if (prod) {
           const criticalLevel = prod.critical_stock_level ?? 0;
           if (totalStock <= criticalLevel && criticalLevel > 0) {
             maybeSendCriticalStockAlert({
-              productId, productName: String(prod.name ?? ''), unit: String(prod.unit ?? ''),
-              totalStock, criticalLevel,
+              productId,
+              productName: String(prod.name ?? ''),
+              unit: String(prod.unit ?? ''),
+              totalStock,
+              criticalLevel,
+              locationId: (whRow as { location_id?: string | null } | null)?.location_id ?? null,
             }).catch((e) => console.log('[Data] alert error:', (e as Error).message));
           }
         }
