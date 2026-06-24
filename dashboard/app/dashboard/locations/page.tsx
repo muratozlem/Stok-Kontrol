@@ -1,18 +1,20 @@
 import { createServerSupabase } from '@/lib/supabase-server'
-import { MapPin, Warehouse, Users, Building2 } from 'lucide-react'
+import { MapPin, Warehouse, Users, Building2, Package, Hash } from 'lucide-react'
 
 export default async function LocationsPage() {
   const supabase = createServerSupabase()
 
-  const [locationsRes, warehousesRes, profilesRes] = await Promise.all([
+  const [locationsRes, warehousesRes, profilesRes, inventoryRes] = await Promise.all([
     supabase.from('locations').select('id, name, city, description, created_at').order('name'),
     supabase.from('warehouses').select('id, location_id'),
     supabase.from('profiles').select('id, location_id').not('location_id', 'is', null),
+    supabase.from('inventory').select('product_id, quantity, warehouses!inner(location_id)'),
   ])
 
   const locations = locationsRes.data ?? []
   const warehouses = warehousesRes.data ?? []
   const profiles = profilesRes.data ?? []
+  const inventory = inventoryRes.data ?? []
 
   const warehousesByLoc: Record<string, number> = {}
   for (const w of warehouses) {
@@ -22,6 +24,15 @@ export default async function LocationsPage() {
   const usersByLoc: Record<string, number> = {}
   for (const p of profiles) {
     if (p.location_id) usersByLoc[p.location_id] = (usersByLoc[p.location_id] ?? 0) + 1
+  }
+
+  const productsByLoc: Record<string, { varieties: Set<string>; total: number }> = {}
+  for (const inv of inventory) {
+    const locId = (inv.warehouses as any)?.location_id
+    if (!locId) continue
+    if (!productsByLoc[locId]) productsByLoc[locId] = { varieties: new Set(), total: 0 }
+    productsByLoc[locId].varieties.add(inv.product_id)
+    productsByLoc[locId].total += inv.quantity ?? 0
   }
 
   return (
@@ -41,6 +52,9 @@ export default async function LocationsPage() {
         {locations.map(loc => {
           const wCount = warehousesByLoc[loc.id] ?? 0
           const uCount = usersByLoc[loc.id] ?? 0
+          const pData = productsByLoc[loc.id]
+          const varieties = pData?.varieties.size ?? 0
+          const totalQty = pData?.total ?? 0
           return (
             <div key={loc.id} className="glass p-5 space-y-4 hover:bg-white/10 transition-colors">
               <div className="flex items-start gap-3">
@@ -78,6 +92,24 @@ export default async function LocationsPage() {
                   <div>
                     <p className="text-lg font-bold text-purple-400">{uCount}</p>
                     <p className="text-[10px] text-slate-500">Personel</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                    <Package className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-amber-400">{varieties}</p>
+                    <p className="text-[10px] text-slate-500">Ürün Çeşidi</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center flex-shrink-0">
+                    <Hash className="w-3.5 h-3.5 text-sky-400" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-sky-400">{totalQty.toLocaleString('tr-TR')}</p>
+                    <p className="text-[10px] text-slate-500">Toplam Adet</p>
                   </div>
                 </div>
               </div>
