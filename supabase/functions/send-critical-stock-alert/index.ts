@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
 
     const locationLabel = locationName ? ` [${esc(locationName)}]` : '';
     const emailPayload = {
-      from: 'Stok Kontrol <onboarding@resend.dev>',
+      from: 'Stok Kontrol <kritik@stokkontrol.tr>',
       to: recipients,
       subject: `⚠️ Kritik Stok${locationLabel}: ${productName}`,
       html: htmlContent,

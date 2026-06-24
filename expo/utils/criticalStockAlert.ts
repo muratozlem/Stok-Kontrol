@@ -45,20 +45,26 @@ async function upsertAlertTimestamp(productId: string): Promise<void> {
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const EDGE_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/send-critical-stock-alert`;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-async function sendViaResend(info: CriticalProductInfo): Promise<boolean> {
+async function sendViaEdgeFunction(info: CriticalProductInfo): Promise<boolean> {
   if (!SUPABASE_URL) {
     console.log('[CriticalAlert] SUPABASE_URL tanımlı değil');
     return false;
   }
 
   try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+    if (!accessToken) {
+      console.log('[CriticalAlert] Oturum bulunamadı, mail atlaması yapılıyor');
+      return false;
+    }
+
     const res = await fetch(EDGE_FUNCTION_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${accessToken}`,
       },
       body: JSON.stringify({
         productId: info.productId,
@@ -77,8 +83,8 @@ async function sendViaResend(info: CriticalProductInfo): Promise<boolean> {
       return false;
     }
 
-    const recipientCount = (data as { recipientCount?: number }).recipientCount ?? 1;
-    console.log('[CriticalAlert] Mail gönderildi → ', recipientCount, 'alıcı (super_admin+admin)');
+    const recipientCount = (data as { recipientCount?: number }).recipientCount ?? 0;
+    console.log('[CriticalAlert] Mail gönderildi →', recipientCount, 'alıcı');
     return true;
   } catch (e) {
     console.log('[CriticalAlert] Edge Function network error:', (e as Error).message);
@@ -102,6 +108,6 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
     }
   }
 
-  const ok = await sendViaResend(info);
+  const ok = await sendViaEdgeFunction(info);
   if (ok) await upsertAlertTimestamp(info.productId);
 }

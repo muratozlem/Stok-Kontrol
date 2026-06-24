@@ -50,8 +50,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         const profile = await loadProfile(session.user.id);
-        if (profile && (profile.status === 'approved' || profile.role === 'super_admin')) {
-          setCurrentUser(profile);
+        if (profile) {
+          if (profile.status === 'rejected') {
+            await supabase.auth.signOut();
+          } else {
+            setCurrentUser(profile);
+          }
         } else {
           await supabase.auth.signOut();
         }
@@ -155,18 +159,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw new Error('Kullanıcı profili bulunamadı');
       }
 
-      if (profile.role !== 'super_admin') {
-        if (profile.status === 'pending') {
-          await supabase.auth.signOut();
-          throw new Error('Hesabınız henüz onaylanmadı. Süper Admin veya Admin onayı bekleniyor.');
-        }
-        if (profile.status === 'rejected') {
-          await supabase.auth.signOut();
-          throw new Error('Üyelik talebiniz reddedildi.');
-        }
+      if (profile.status === 'rejected') {
+        await supabase.auth.signOut();
+        throw new Error('Üyelik talebiniz reddedildi.');
       }
 
-      console.log('[Auth] Giriş başarılı:', profile.email, '/', profile.role);
+      console.log('[Auth] Giriş başarılı:', profile.email, '/', profile.role, '/', profile.status);
       return profile;
     },
     onSuccess: (user) => {
@@ -195,10 +193,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const isStaff = role === 'staff';
   const canManageUsers = isSuperAdmin || role === 'admin' || role === 'chef';
 
+  const isPending =
+    currentUser !== null &&
+    currentUser.status !== 'approved' &&
+    currentUser.role !== 'super_admin';
+
   return {
     currentUser,
     isReady,
     isLoggedIn: !!currentUser,
+    isPending,
     isSuperAdmin,
     isAdmin,
     isChef,
