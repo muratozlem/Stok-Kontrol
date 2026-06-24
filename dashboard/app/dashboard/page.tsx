@@ -10,7 +10,7 @@ import { Package, AlertTriangle, Users, MapPin } from 'lucide-react'
 async function getStats(supabase: any) {
   const [inventoryRes, profilesRes, locationsRes, criticalRes] = await Promise.all([
     supabase.from('inventory').select('quantity'),
-    supabase.from('profiles').select('id, approved').eq('approved', false).neq('role', 'super_admin'),
+    supabase.from('profiles').select('id, status').eq('status', 'pending').neq('role', 'super_admin'),
     supabase.from('locations').select('id'),
     supabase.from('inventory').select('quantity, products!inner(min_quantity)').lt('quantity', 1),
   ])
@@ -72,13 +72,13 @@ async function getForecastData(supabase: any) {
 async function getStaffData(supabase: any) {
   const { data } = await supabase
     .from('transactions')
-    .select('user_id, profiles!inner(full_name)')
+    .select('user_id, profiles!inner(username)')
     .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
   if (!data?.length) return []
   const map: Record<string, { name: string; count: number }> = {}
   for (const t of data) {
     const id = t.user_id
-    if (!map[id]) map[id] = { name: t.profiles?.full_name ?? 'Bilinmiyor', count: 0 }
+    if (!map[id]) map[id] = { name: t.profiles?.username ?? 'Bilinmiyor', count: 0 }
     map[id].count++
   }
   return Object.values(map).map(v => ({ name: v.name, value: v.count }))

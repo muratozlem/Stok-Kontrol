@@ -70,7 +70,7 @@ export default function ReportsClient({ inventory, transactions, products, wareh
             product: t.products?.name,
             quantity: t.quantity,
             warehouse: t.warehouses?.name,
-            staff: t.profiles?.full_name,
+            staff: t.profiles?.username,
             notes: t.notes ?? '',
           })
         }

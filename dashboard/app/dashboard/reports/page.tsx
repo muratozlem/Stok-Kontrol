@@ -6,7 +6,7 @@ export default async function ReportsPage() {
 
   const [inventoryRes, txnRes, productsRes, warehousesRes] = await Promise.all([
     supabase.from('inventory').select('quantity, products!inner(name, sku, min_quantity), warehouses!inner(name, locations!inner(name))'),
-    supabase.from('transactions').select('type, quantity, created_at, notes, products!inner(name), warehouses!inner(name), profiles!inner(full_name)').order('created_at', { ascending: false }).limit(500),
+    supabase.from('transactions').select('type, quantity, created_at, notes, products!inner(name), warehouses!inner(name), profiles!inner(username)').order('created_at', { ascending: false }).limit(500),
     supabase.from('products').select('*'),
     supabase.from('warehouses').select('*, locations!inner(name)'),
   ])
