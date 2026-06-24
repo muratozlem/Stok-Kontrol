@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Torbalı Gf Stok Kontrol",
-    "slug": "torbaligfstokkontrol",
+    "name": "Stok Kontrol",
+    "slug": "stokkontrol",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,7 +17,7 @@
 
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.torbaligf.stokkontrol"
+      "bundleIdentifier": "com.stokkontrol.app"
     },
 
     "android": {
@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.torbaligf.stokkontrol"
+      "package": "com.stokkontrol.app"
     },
 
     "web": {
