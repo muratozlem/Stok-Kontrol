@@ -1,26 +1,48 @@
-import { redirect } from 'next/navigation'
-import { createServerSupabase } from '@/lib/supabase-server'
+'use client'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase-browser'
 import Sidebar from '@/components/Sidebar'
 
-export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createServerSupabase()
-  const { data: { user } } = await supabase.auth.getUser()
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const [ready, setReady] = useState(false)
+  const [userData, setUserData] = useState<{ email: string; role: string } | null>(null)
 
-  if (!user) redirect('/login')
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) {
+        router.replace('/')
+        return
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single()
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, full_name')
-    .eq('id', user.id)
-    .single()
+      if (!profile || !['super_admin', 'admin'].includes(profile.role)) {
+        await supabase.auth.signOut()
+        router.replace('/')
+        return
+      }
+      setUserData({ email: user.email ?? '', role: profile.role })
+      setReady(true)
+    })
+  }, [router])
 
-  if (!profile || !['super_admin', 'admin'].includes(profile.role)) {
-    redirect('/403')
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-sky-500/30 border-t-sky-500 rounded-full animate-spin" />
+      </div>
+    )
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-950">
-      <Sidebar userEmail={user.email ?? ''} userRole={profile.role} />
+      <Sidebar userEmail={userData!.email} userRole={userData!.role} />
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>
