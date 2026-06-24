@@ -66,6 +66,7 @@ async function sendViaResend(info: CriticalProductInfo): Promise<boolean> {
         unit: info.unit,
         totalStock: info.totalStock,
         criticalLevel: info.criticalLevel,
+        locationId: info.locationId ?? null,
       }),
     });
 
