@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
       .select('id', { count: 'exact', head: true })
 
     const isFirst = !count || count === 0
-    const role: 'admin' | 'user' = isFirst ? 'admin' : 'user'
+    const role: 'super_admin' | 'staff' = isFirst ? 'super_admin' : 'staff'
     const status: 'pending' | 'approved' = isFirst ? 'approved' : 'pending'
 
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({

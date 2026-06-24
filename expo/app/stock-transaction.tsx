@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -22,9 +21,11 @@ import {
   Package,
   ScanBarcode,
   Warehouse as WarehouseIcon,
+  AlertTriangle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import { TransactionType } from '@/types';
 
@@ -34,109 +35,63 @@ export default function StockTransactionPage() {
     productId?: string;
     warehouseId?: string;
   }>();
-  const { products, warehouses, addStockTransaction, getStockForProductInWarehouse } =
-    useData();
+  const { products, warehouses, addStockTransaction, getStockForProductInWarehouse } = useData();
+  const { isStaff } = useAuth();
 
-  const [txType, setTxType] = useState<TransactionType>(
-    (params.type as TransactionType) || 'IN'
-  );
-  const [selectedProduct, setSelectedProduct] = useState<string>(
-    params.productId ?? ''
-  );
-  const [selectedWarehouse, setSelectedWarehouse] = useState<string>(
-    params.warehouseId ?? ''
-  );
+  const defaultType: TransactionType = isStaff ? 'OUT' : ((params.type as TransactionType) || 'IN');
+
+  const [txType, setTxType] = useState<TransactionType>(defaultType);
+  const [selectedProduct, setSelectedProduct] = useState<string>(params.productId ?? '');
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>(params.warehouseId ?? '');
   const [quantity, setQuantity] = useState<string>('1');
   const [note, setNote] = useState<string>('');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const currentStock = useMemo(
-    () =>
-      selectedProduct && selectedWarehouse
-        ? getStockForProductInWarehouse(selectedProduct, selectedWarehouse)
-        : 0,
+    () => selectedProduct && selectedWarehouse
+      ? getStockForProductInWarehouse(selectedProduct, selectedWarehouse) : 0,
     [selectedProduct, selectedWarehouse, getStockForProductInWarehouse]
   );
 
   const isIn = txType === 'IN';
   const themeColor = isIn ? Colors.stockIn : Colors.stockOut;
 
-  const adjustQty = useCallback(
-    (delta: number) => {
-      const c = parseInt(quantity, 10) || 0;
-      const newVal = Math.max(1, c + delta);
-      setQuantity(String(newVal));
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    },
-    [quantity]
-  );
+  const adjustQty = useCallback((delta: number) => {
+    const c = parseInt(quantity, 10) || 0;
+    const newVal = Math.max(1, c + delta);
+    setQuantity(String(newVal));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [quantity]);
 
   const executeTransaction = useCallback((qty: number) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    addStockTransaction(
-      selectedProduct,
-      selectedWarehouse,
-      qty,
-      txType,
-      note.trim()
-    );
+    addStockTransaction(selectedProduct, selectedWarehouse, qty, txType, note.trim());
     router.back();
   }, [selectedProduct, selectedWarehouse, txType, note, addStockTransaction]);
 
   const handleSubmit = useCallback(() => {
-    if (!selectedProduct) {
-      Alert.alert('Hata', 'Lütfen bir ürün seçin.');
-      return;
-    }
-    if (!selectedWarehouse) {
-      Alert.alert('Hata', 'Lütfen bir depo seçin.');
-      return;
-    }
+    setFormError(null);
+    if (!selectedProduct) { setFormError('Lütfen bir ürün seçin.'); return; }
+    if (!selectedWarehouse) { setFormError('Lütfen bir depo seçin.'); return; }
     const qty = parseInt(quantity, 10);
-    if (!qty || qty <= 0) {
-      Alert.alert('Hata', 'Geçerli bir miktar girin.');
-      return;
-    }
+    if (!qty || qty <= 0) { setFormError('Geçerli bir miktar girin.'); return; }
     if (txType === 'OUT' && qty > currentStock) {
-      Alert.alert('Hata', `Mevcut stok (${currentStock}) yetersiz.`);
+      setFormError(`Mevcut stok (${currentStock}) yetersiz.`);
       return;
     }
-
     if (txType === 'OUT') {
-      const productName = products.find(p => p.id === selectedProduct)?.name ?? 'Seçili ürün';
-      const warehouseName = warehouses.find(w => w.id === selectedWarehouse)?.name ?? 'Seçili depo';
-      if (Platform.OS === 'web') {
-        const confirmed = window.confirm(
-          `"${productName}" ürününden ${qty} adet "${warehouseName}" deposundan çıkış yapılacak.\n\nMevcut stok: ${currentStock} → İşlem sonrası: ${currentStock - qty}\n\nEmin misiniz?`
-        );
-        if (confirmed) executeTransaction(qty);
-      } else {
-        Alert.alert(
-          'Stok Çıkışı Onayı',
-          `"${productName}" ürününden ${qty} adet "${warehouseName}" deposundan çıkış yapılacak.\n\nMevcut stok: ${currentStock}\nİşlem sonrası: ${currentStock - qty}\n\nEmin misiniz?`,
-          [
-            { text: 'İptal', style: 'cancel' },
-            {
-              text: 'Onayla',
-              style: 'destructive',
-              onPress: () => executeTransaction(qty),
-            },
-          ]
-        );
-      }
+      setShowConfirm(true);
     } else {
       executeTransaction(qty);
     }
-  }, [
-    selectedProduct,
-    selectedWarehouse,
-    quantity,
-    txType,
-    note,
-    currentStock,
-    products,
-    warehouses,
-    executeTransaction,
-  ]);
+  }, [selectedProduct, selectedWarehouse, quantity, txType, currentStock, executeTransaction]);
+
+  const handleConfirmOut = useCallback(() => {
+    const qty = parseInt(quantity, 10);
+    setShowConfirm(false);
+    executeTransaction(qty);
+  }, [quantity, executeTransaction]);
 
   const openBarcodeScanner = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -147,65 +102,73 @@ export default function StockTransactionPage() {
     router.push(`/barcode-scanner?${qp.toString()}`);
   }, [txType, selectedWarehouse]);
 
+  const selectedProductObj = useMemo(() => products.find(p => p.id === selectedProduct), [products, selectedProduct]);
+  const selectedWarehouseObj = useMemo(() => warehouses.find(w => w.id === selectedWarehouse), [warehouses, selectedWarehouse]);
+  const qty = parseInt(quantity, 10) || 0;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.typeRow}>
-          <TouchableOpacity
-            style={[styles.typeBtn, isIn && styles.typeBtnActive]}
-            onPress={() => setTxType('IN')}
-            activeOpacity={0.85}
-            testID="type-in-btn"
-          >
-            {isIn ? (
-              <LinearGradient
-                colors={['#24B377', Colors.stockIn]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.typeBtnGradient}
-              >
-                <ArrowDownLeft size={20} color={Colors.white} strokeWidth={2.5} />
-                <Text style={styles.typeBtnTextActive}>Stok Girişi</Text>
-              </LinearGradient>
-            ) : (
-              <View style={styles.typeBtnInner}>
-                <ArrowDownLeft size={20} color={Colors.stockIn} strokeWidth={2.4} />
-                <Text style={styles.typeBtnText}>Stok Girişi</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.typeBtn, !isIn && styles.typeBtnActive]}
-            onPress={() => setTxType('OUT')}
-            activeOpacity={0.85}
-            testID="type-out-btn"
-          >
-            {!isIn ? (
-              <LinearGradient
-                colors={['#EC6357', Colors.stockOut]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.typeBtnGradient}
-              >
-                <ArrowUpRight size={20} color={Colors.white} strokeWidth={2.5} />
-                <Text style={styles.typeBtnTextActive}>Stok Çıkışı</Text>
-              </LinearGradient>
-            ) : (
-              <View style={styles.typeBtnInner}>
-                <ArrowUpRight size={20} color={Colors.stockOut} strokeWidth={2.4} />
-                <Text style={styles.typeBtnText}>Stok Çıkışı</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
+        {!isStaff && (
+          <View style={styles.typeRow}>
+            <TouchableOpacity
+              style={[styles.typeBtn, isIn && styles.typeBtnActive]}
+              onPress={() => setTxType('IN')}
+              activeOpacity={0.85}
+              testID="type-in-btn"
+            >
+              {isIn ? (
+                <LinearGradient
+                  colors={['#24B377', Colors.stockIn]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.typeBtnGradient}
+                >
+                  <ArrowDownLeft size={20} color={Colors.white} strokeWidth={2.5} />
+                  <Text style={styles.typeBtnTextActive}>Stok Girişi</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.typeBtnInner}>
+                  <ArrowDownLeft size={20} color={Colors.stockIn} strokeWidth={2.4} />
+                  <Text style={styles.typeBtnText}>Stok Girişi</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.typeBtn, !isIn && styles.typeBtnActive]}
+              onPress={() => setTxType('OUT')}
+              activeOpacity={0.85}
+              testID="type-out-btn"
+            >
+              {!isIn ? (
+                <LinearGradient
+                  colors={['#EC6357', Colors.stockOut]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.typeBtnGradient}
+                >
+                  <ArrowUpRight size={20} color={Colors.white} strokeWidth={2.5} />
+                  <Text style={styles.typeBtnTextActive}>Stok Çıkışı</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.typeBtnInner}>
+                  <ArrowUpRight size={20} color={Colors.stockOut} strokeWidth={2.4} />
+                  <Text style={styles.typeBtnText}>Stok Çıkışı</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isStaff && (
+          <View style={styles.staffBanner}>
+            <ArrowUpRight size={16} color={Colors.stockOut} strokeWidth={2.4} />
+            <Text style={styles.staffBannerText}>Personel — Yalnızca Stok Çıkışı</Text>
+          </View>
+        )}
 
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleRow}>
@@ -237,34 +200,18 @@ export default function StockTransactionPage() {
               return (
                 <TouchableOpacity
                   key={p.id}
-                  style={[
-                    styles.productOption,
-                    active && styles.productOptionActive,
-                  ]}
+                  style={[styles.productOption, active && styles.productOptionActive]}
                   onPress={() => setSelectedProduct(p.id)}
                   activeOpacity={0.8}
                 >
                   {p.imageUrl ? (
-                    <Image
-                      source={{ uri: p.imageUrl }}
-                      style={styles.productOptionImage}
-                      contentFit="cover"
-                    />
+                    <Image source={{ uri: p.imageUrl }} style={styles.productOptionImage} contentFit="cover" />
                   ) : (
-                    <View style={[
-                      styles.productOptionPlaceholder,
-                      active && styles.productOptionPlaceholderActive,
-                    ]}>
+                    <View style={[styles.productOptionPlaceholder, active && styles.productOptionPlaceholderActive]}>
                       <Package size={14} color={active ? Colors.white : Colors.textMuted} />
                     </View>
                   )}
-                  <Text
-                    style={[
-                      styles.optionChipText,
-                      active && styles.optionChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
+                  <Text style={[styles.optionChipText, active && styles.optionChipTextActive]} numberOfLines={1}>
                     {p.name}
                   </Text>
                   {active && <Check size={14} color={Colors.white} strokeWidth={3} />}
@@ -294,21 +241,12 @@ export default function StockTransactionPage() {
               return (
                 <TouchableOpacity
                   key={w.id}
-                  style={[
-                    styles.optionChip,
-                    active && styles.optionChipActive,
-                  ]}
+                  style={[styles.optionChip, active && styles.optionChipActive]}
                   onPress={() => setSelectedWarehouse(w.id)}
                   activeOpacity={0.8}
                 >
                   <WarehouseIcon size={14} color={active ? Colors.white : Colors.textSecondary} strokeWidth={2.3} />
-                  <Text
-                    style={[
-                      styles.optionChipText,
-                      active && styles.optionChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
+                  <Text style={[styles.optionChipText, active && styles.optionChipTextActive]} numberOfLines={1}>
                     {w.name}
                   </Text>
                   {active && <Check size={14} color={Colors.white} strokeWidth={3} />}
@@ -325,9 +263,7 @@ export default function StockTransactionPage() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.currentStockLabel}>Mevcut Stok</Text>
-              <Text style={styles.currentStockHint}>
-                Bu depodaki miktar
-              </Text>
+              <Text style={styles.currentStockHint}>Bu depodaki miktar</Text>
             </View>
             <Text style={styles.currentStockValue}>{currentStock}</Text>
           </View>
@@ -342,12 +278,7 @@ export default function StockTransactionPage() {
           </View>
         </View>
         <View style={styles.qtyRow}>
-          <TouchableOpacity
-            style={styles.qtyBtn}
-            onPress={() => adjustQty(-1)}
-            activeOpacity={0.7}
-            testID="qty-minus"
-          >
+          <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQty(-1)} activeOpacity={0.7} testID="qty-minus">
             <Minus size={22} color={Colors.text} strokeWidth={2.5} />
           </TouchableOpacity>
           <View style={styles.qtyInputWrap}>
@@ -360,12 +291,7 @@ export default function StockTransactionPage() {
               testID="quantity-input"
             />
           </View>
-          <TouchableOpacity
-            style={styles.qtyBtn}
-            onPress={() => adjustQty(1)}
-            activeOpacity={0.7}
-            testID="qty-plus"
-          >
+          <TouchableOpacity style={styles.qtyBtn} onPress={() => adjustQty(1)} activeOpacity={0.7} testID="qty-plus">
             <Plus size={22} color={Colors.text} strokeWidth={2.5} />
           </TouchableOpacity>
         </View>
@@ -382,28 +308,68 @@ export default function StockTransactionPage() {
           testID="note-input"
         />
 
-        <TouchableOpacity
-          style={styles.submitBtn}
-          onPress={handleSubmit}
-          activeOpacity={0.9}
-          testID="submit-transaction-btn"
-        >
-          <LinearGradient
-            colors={isIn ? ['#24B377', Colors.stockIn] : ['#EC6357', Colors.stockOut]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.submitBtnGradient}
-          >
-            {isIn ? (
-              <ArrowDownLeft size={22} color={Colors.white} strokeWidth={2.6} />
-            ) : (
-              <ArrowUpRight size={22} color={Colors.white} strokeWidth={2.6} />
-            )}
-            <Text style={styles.submitBtnText}>
-              {isIn ? 'Stok Girişi Yap' : 'Stok Çıkışı Yap'}
+        {formError && (
+          <View style={styles.errorBox}>
+            <AlertTriangle size={15} color={Colors.danger} strokeWidth={2.3} />
+            <Text style={styles.errorText}>{formError}</Text>
+          </View>
+        )}
+
+        {showConfirm ? (
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmHeader}>
+              <AlertTriangle size={18} color={Colors.stockOut} strokeWidth={2.3} />
+              <Text style={styles.confirmTitle}>Stok Çıkışı Onayı</Text>
+            </View>
+            <Text style={styles.confirmBody}>
+              <Text style={{ fontWeight: '700' }}>"{selectedProductObj?.name}"</Text> ürününden{' '}
+              <Text style={{ fontWeight: '700' }}>{qty} adet</Text>{' '}
+              <Text style={{ fontWeight: '700' }}>"{selectedWarehouseObj?.name}"</Text> deposundan çıkış yapılacak.
             </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <Text style={styles.confirmSub}>
+              Mevcut stok: {currentStock} → İşlem sonrası: {currentStock - qty}
+            </Text>
+            <View style={styles.confirmRow}>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                onPress={() => setShowConfirm(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmCancelText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmOkBtn}
+                onPress={handleConfirmOut}
+                activeOpacity={0.8}
+              >
+                <ArrowUpRight size={15} color={Colors.white} strokeWidth={2.6} />
+                <Text style={styles.confirmOkText}>Onayla</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.submitBtn}
+            onPress={handleSubmit}
+            activeOpacity={0.9}
+            testID="submit-transaction-btn"
+          >
+            <LinearGradient
+              colors={isIn ? ['#24B377', Colors.stockIn] : ['#EC6357', Colors.stockOut]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.submitBtnGradient}
+            >
+              {isIn ? (
+                <ArrowDownLeft size={22} color={Colors.white} strokeWidth={2.6} />
+              ) : (
+                <ArrowUpRight size={22} color={Colors.white} strokeWidth={2.6} />
+              )}
+              <Text style={styles.submitBtnText}>
+                {isIn ? 'Stok Girişi Yap' : 'Stok Çıkışı Yap'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -412,286 +378,141 @@ export default function StockTransactionPage() {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
+  flex: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 20 },
+  staffBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFF0EF', borderRadius: 12, padding: 12,
+    marginBottom: 18, borderWidth: 1, borderColor: '#FCCDC9',
   },
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  content: {
-    padding: 20,
-  },
+  staffBannerText: { fontSize: 13, fontWeight: '700' as const, color: Colors.stockOut },
   typeRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 22,
-    padding: 6,
-    backgroundColor: Colors.white,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    flexDirection: 'row', gap: 10, marginBottom: 22, padding: 6,
+    backgroundColor: Colors.white, borderRadius: 18,
+    borderWidth: 1, borderColor: Colors.borderLight,
   },
-  typeBtn: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
+  typeBtn: { flex: 1, borderRadius: 14, overflow: 'hidden' },
   typeBtnActive: {},
   typeBtnGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, gap: 8,
   },
   typeBtnInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 13,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, gap: 8,
   },
-  typeBtnText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-  },
-  typeBtnTextActive: {
-    color: Colors.white,
-    fontSize: 14,
-    fontWeight: '800' as const,
-    letterSpacing: 0.2,
-  },
+  typeBtnText: { fontSize: 14, fontWeight: '700' as const, color: Colors.textSecondary },
+  typeBtnTextActive: { color: Colors.white, fontSize: 14, fontWeight: '800' as const, letterSpacing: 0.2 },
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12,
   },
-  sectionHeaderSpaced: {
-    marginTop: 20,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  sectionHeaderSpaced: { marginTop: 20 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   stepDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 22, height: 22, borderRadius: 11, backgroundColor: Colors.primary,
+    alignItems: 'center', justifyContent: 'center',
   },
-  stepDotText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    color: Colors.white,
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    letterSpacing: -0.2,
-  },
+  stepDotText: { fontSize: 11, fontWeight: '800' as const, color: Colors.white },
+  label: { fontSize: 15, fontWeight: '800' as const, color: Colors.text, letterSpacing: -0.2 },
   labelPlain: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    letterSpacing: 0.3,
-    textTransform: 'uppercase' as const,
+    fontSize: 13, fontWeight: '700' as const, color: Colors.textSecondary,
+    letterSpacing: 0.3, textTransform: 'uppercase' as const,
   },
   scanBarBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
-    gap: 5,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, gap: 5,
   },
-  scanBarBtnText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: Colors.white,
-    letterSpacing: 0.2,
-  },
-  optionList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  scanBarBtnText: { fontSize: 12, fontWeight: '800' as const, color: Colors.white, letterSpacing: 0.2 },
+  optionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optionChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 13,
-    paddingVertical: 9,
-    borderRadius: 14,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    gap: 6,
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, paddingVertical: 9,
+    borderRadius: 14, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.borderLight, gap: 6,
   },
-  optionChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
+  optionChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   productOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 14,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 7,
+    borderRadius: 14, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.borderLight, gap: 8,
   },
-  productOptionActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  productOptionImage: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-  },
+  productOptionActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  productOptionImage: { width: 26, height: 26, borderRadius: 8 },
   productOptionPlaceholder: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 26, height: 26, borderRadius: 8, backgroundColor: Colors.borderLight,
+    alignItems: 'center', justifyContent: 'center',
   },
-  productOptionPlaceholderActive: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
-  optionChipText: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.text,
-    maxWidth: 140,
-  },
-  optionChipTextActive: {
-    color: Colors.white,
-  },
+  productOptionPlaceholderActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  optionChipText: { fontSize: 13, fontWeight: '700' as const, color: Colors.text, maxWidth: 140 },
+  optionChipTextActive: { color: Colors.white },
   emptyCard: {
-    width: '100%' as const,
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    paddingVertical: 24,
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderStyle: 'dashed' as const,
+    width: '100%' as const, backgroundColor: Colors.white, borderRadius: 14,
+    paddingVertical: 24, alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: Colors.borderLight, borderStyle: 'dashed' as const,
   },
-  emptyText: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    fontWeight: '500' as const,
-  },
+  emptyText: { fontSize: 13, color: Colors.textMuted, fontWeight: '500' as const },
   currentStockBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: Colors.primaryVeryLight,
-    borderRadius: 16,
-    padding: 14,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: Colors.primarySoft,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.primaryVeryLight, borderRadius: 16, padding: 14,
+    marginTop: 18, borderWidth: 1, borderColor: Colors.primarySoft,
   },
   currentStockIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.white,
+    alignItems: 'center', justifyContent: 'center',
   },
-  currentStockLabel: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.text,
-  },
-  currentStockHint: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
-  currentStockValue: {
-    fontSize: 24,
-    fontWeight: '800' as const,
-    color: Colors.primary,
-    letterSpacing: -0.5,
-  },
-  qtyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  currentStockLabel: { fontSize: 13, fontWeight: '700' as const, color: Colors.text },
+  currentStockHint: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
+  currentStockValue: { fontSize: 24, fontWeight: '800' as const, color: Colors.primary, letterSpacing: -0.5 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   qtyBtn: {
-    width: 54,
-    height: 58,
-    borderRadius: 16,
-    backgroundColor: Colors.white,
-    borderWidth: 1.5,
-    borderColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 54, height: 58, borderRadius: 16, backgroundColor: Colors.white,
+    borderWidth: 1.5, borderColor: Colors.borderLight, alignItems: 'center', justifyContent: 'center',
   },
   qtyInputWrap: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: Colors.borderLight,
+    flex: 1, backgroundColor: Colors.white, borderRadius: 16,
+    borderWidth: 1.5, borderColor: Colors.borderLight,
   },
   qtyInput: {
-    paddingVertical: 14,
-    fontSize: 28,
-    fontWeight: '800' as const,
-    color: Colors.text,
-    letterSpacing: -0.5,
+    paddingVertical: 14, fontSize: 28, fontWeight: '800' as const,
+    color: Colors.text, letterSpacing: -0.5,
   },
   input: {
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: Colors.text,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    backgroundColor: Colors.white, borderRadius: 14, paddingHorizontal: 16,
+    paddingVertical: 14, fontSize: 15, color: Colors.text,
+    borderWidth: 1, borderColor: Colors.borderLight,
   },
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFF0EF', borderRadius: 12, padding: 12,
+    marginTop: 14, borderWidth: 1, borderColor: '#FCCDC9',
+  },
+  errorText: { fontSize: 13, color: Colors.danger, fontWeight: '600' as const, flex: 1 },
+  confirmCard: {
+    backgroundColor: Colors.white, borderRadius: 18, padding: 18, marginTop: 22,
+    borderWidth: 1.5, borderColor: '#FCCDC9',
+  },
+  confirmHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  confirmTitle: { fontSize: 15, fontWeight: '800' as const, color: Colors.text },
+  confirmBody: { fontSize: 14, color: Colors.text, lineHeight: 22, marginBottom: 6 },
+  confirmSub: { fontSize: 12, color: Colors.textSecondary, marginBottom: 14 },
+  confirmRow: { flexDirection: 'row', gap: 10 },
+  confirmCancelBtn: {
+    flex: 1, backgroundColor: Colors.background, borderRadius: 12, paddingVertical: 13,
+    alignItems: 'center', borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  confirmCancelText: { fontSize: 14, fontWeight: '700' as const, color: Colors.textSecondary },
+  confirmOkBtn: {
+    flex: 1.5, backgroundColor: Colors.stockOut, borderRadius: 12, paddingVertical: 13,
+    alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  confirmOkText: { fontSize: 14, fontWeight: '800' as const, color: Colors.white },
   submitBtn: {
-    marginTop: 26,
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 5,
+    marginTop: 26, borderRadius: 16, overflow: 'hidden',
+    shadowColor: Colors.shadow, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, shadowRadius: 12, elevation: 5,
   },
   submitBtnGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 17,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 17, gap: 8,
   },
-  submitBtnText: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: '800' as const,
-    letterSpacing: 0.3,
-  },
-  bottomSpacer: {
-    height: 40,
-  },
+  submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '800' as const, letterSpacing: 0.3 },
+  bottomSpacer: { height: 40 },
 });

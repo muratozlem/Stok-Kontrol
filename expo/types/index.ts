@@ -9,10 +9,19 @@ export interface Product {
   createdAt: string;
 }
 
+export interface Location {
+  id: string;
+  name: string;
+  city: string;
+  description: string;
+  createdAt: string;
+}
+
 export interface Warehouse {
   id: string;
   name: string;
   location: string;
+  locationId: string | null;
   description: string;
   createdAt: string;
 }
@@ -43,9 +52,11 @@ export interface DashboardStats {
   todayTransactions: number;
 }
 
+export type UserRole = 'super_admin' | 'admin' | 'chef' | 'staff';
+
 export interface User {
   id: string;
   username: string;
-  role: 'admin' | 'user';
+  role: UserRole;
   createdAt: string;
 }

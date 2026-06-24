@@ -2,13 +2,15 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
+import type { UserRole } from '@/types';
 
 export interface AppUser {
   id: string;
   email: string;
   username: string;
-  role: 'admin' | 'user';
+  role: UserRole;
   status: 'pending' | 'approved' | 'rejected';
+  locationId: string | null;
   createdAt: string;
 }
 
@@ -17,8 +19,9 @@ function rowToUser(row: Record<string, unknown>): AppUser {
     id: String(row.id ?? ''),
     email: String(row.email ?? ''),
     username: String(row.username ?? row.email ?? ''),
-    role: (row.role as 'admin' | 'user') ?? 'user',
-    status: (row.status as 'pending' | 'approved' | 'rejected') ?? 'approved',
+    role: (row.role as UserRole) ?? 'staff',
+    status: (row.status as 'pending' | 'approved' | 'rejected') ?? 'pending',
+    locationId: (row.location_id as string | null) ?? null,
     createdAt: String(row.created_at ?? new Date().toISOString()),
   };
 }
@@ -47,7 +50,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
         const profile = await loadProfile(session.user.id);
-        if (profile && (profile.status === 'approved' || profile.role === 'admin')) {
+        if (profile && (profile.status === 'approved' || profile.role === 'super_admin')) {
           setCurrentUser(profile);
         } else {
           await supabase.auth.signOut();
@@ -144,10 +147,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw new Error('Kullanıcı profili bulunamadı');
       }
 
-      if (profile.role !== 'admin') {
+      if (profile.role !== 'super_admin') {
         if (profile.status === 'pending') {
           await supabase.auth.signOut();
-          throw new Error('Hesabınız henüz admin tarafından onaylanmadı.');
+          throw new Error('Hesabınız henüz onaylanmadı. Süper Admin veya Admin onayı bekleniyor.');
         }
         if (profile.status === 'rejected') {
           await supabase.auth.signOut();
@@ -155,7 +158,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       }
 
-      console.log('[Auth] Giriş başarılı:', profile.email);
+      console.log('[Auth] Giriş başarılı:', profile.email, '/', profile.role);
       return profile;
     },
     onSuccess: (user) => {
@@ -177,11 +180,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     return loginMutation.mutateAsync({ email, password });
   }, [loginMutation]);
 
+  const role = currentUser?.role ?? null;
+  const isSuperAdmin = role === 'super_admin';
+  const isAdmin = role === 'super_admin' || role === 'admin';
+  const isChef = role === 'chef';
+  const isStaff = role === 'staff';
+  const canManageUsers = isSuperAdmin || role === 'admin' || role === 'chef';
+
   return {
     currentUser,
     isReady,
     isLoggedIn: !!currentUser,
-    isAdmin: currentUser?.role === 'admin',
+    isSuperAdmin,
+    isAdmin,
+    isChef,
+    isStaff,
+    canManageUsers,
     register,
     login,
     logout,

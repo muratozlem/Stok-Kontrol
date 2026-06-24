@@ -1,12 +1,10 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
-  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,38 +18,33 @@ import {
   LogOut,
   Info,
   ShieldCheck,
+  X,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 
+const roleLabel: Record<string, string> = {
+  super_admin: 'Süper Admin',
+  admin: 'İdari İşler',
+  chef: 'Şef',
+  staff: 'Personel',
+};
+
 export default function SettingsPage() {
   const { products, warehouses, transactions } = useData();
-  const { currentUser, isAdmin, logout } = useAuth();
+  const { currentUser, canManageUsers, logout } = useAuth();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   const handleLogout = useCallback(() => {
-    if (Platform.OS === 'web') {
-      if (window.confirm('Oturumunuz kapatılacak. Devam etmek istiyor musunuz?')) {
-        logout();
-      }
-      return;
-    }
-    Alert.alert(
-      'Çıkış Yap',
-      'Oturumunuz kapatılacak. Devam etmek istiyor musunuz?',
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Çıkış Yap',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            logout();
-          },
-        },
-      ]
-    );
+    setConfirmLogout(true);
+  }, []);
+
+  const doLogout = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setConfirmLogout(false);
+    logout();
   }, [logout]);
 
   const goToAdmin = useCallback(() => {
@@ -59,6 +52,7 @@ export default function SettingsPage() {
   }, []);
 
   const initials = (currentUser?.username ?? currentUser?.email ?? 'U').charAt(0).toUpperCase();
+  const displayRole = roleLabel[currentUser?.role ?? ''] ?? 'Kullanıcı';
 
   return (
     <ScrollView
@@ -82,9 +76,7 @@ export default function SettingsPage() {
           </Text>
           <View style={styles.profileBadge}>
             <Shield size={11} color={Colors.white} strokeWidth={2.4} />
-            <Text style={styles.profileRole}>
-              {isAdmin ? 'Yönetici' : 'Kullanıcı'}
-            </Text>
+            <Text style={styles.profileRole}>{displayRole}</Text>
           </View>
         </View>
       </LinearGradient>
@@ -121,15 +113,13 @@ export default function SettingsPage() {
           </View>
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>Supabase Bulut</Text>
-            <Text style={styles.infoSubtitle}>
-              Veriler bulutta gerçek zamanlı saklanır
-            </Text>
+            <Text style={styles.infoSubtitle}>Veriler bulutta gerçek zamanlı saklanır</Text>
           </View>
           <View style={styles.statusDot} />
         </View>
       </View>
 
-      {isAdmin && (
+      {canManageUsers && (
         <>
           <Text style={styles.sectionLabel}>YÖNETİM</Text>
           <View style={styles.card}>
@@ -143,9 +133,9 @@ export default function SettingsPage() {
                 <ShieldCheck size={18} color={Colors.primary} strokeWidth={2.3} />
               </View>
               <View style={styles.infoContent}>
-                <Text style={styles.infoTitle}>Admin Paneli</Text>
+                <Text style={styles.infoTitle}>Yönetim Paneli</Text>
                 <Text style={styles.infoSubtitle}>
-                  Üyelik talepleri, kullanıcı ve veri yönetimi
+                  Kullanıcı, lokasyon ve yetki yönetimi
                 </Text>
               </View>
               <ChevronRight size={18} color={Colors.textMuted} />
@@ -156,21 +146,45 @@ export default function SettingsPage() {
 
       <Text style={styles.sectionLabel}>HESAP</Text>
       <View style={styles.card}>
-        <TouchableOpacity
-          style={styles.actionRow}
-          onPress={handleLogout}
-          activeOpacity={0.7}
-          testID="logout-btn"
-        >
-          <View style={styles.logoutIconWrap}>
-            <LogOut size={18} color={Colors.primary} strokeWidth={2.3} />
+        {confirmLogout ? (
+          <View style={styles.logoutConfirm}>
+            <Text style={styles.logoutConfirmText}>Oturumunuz kapatılacak. Emin misiniz?</Text>
+            <View style={styles.logoutConfirmRow}>
+              <TouchableOpacity
+                style={styles.logoutCancelBtn}
+                onPress={() => setConfirmLogout(false)}
+                activeOpacity={0.8}
+              >
+                <X size={14} color={Colors.textSecondary} strokeWidth={2.4} />
+                <Text style={styles.logoutCancelText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutDoBtn}
+                onPress={doLogout}
+                activeOpacity={0.8}
+              >
+                <LogOut size={14} color={Colors.white} strokeWidth={2.4} />
+                <Text style={styles.logoutDoBtnText}>Çıkış Yap</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.infoContent}>
-            <Text style={styles.logoutTitle}>Çıkış Yap</Text>
-            <Text style={styles.infoSubtitle}>Oturumu sonlandır</Text>
-          </View>
-          <ChevronRight size={18} color={Colors.textMuted} />
-        </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleLogout}
+            activeOpacity={0.7}
+            testID="logout-btn"
+          >
+            <View style={styles.logoutIconWrap}>
+              <LogOut size={18} color={Colors.primary} strokeWidth={2.3} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.logoutTitle}>Çıkış Yap</Text>
+              <Text style={styles.infoSubtitle}>Oturumu sonlandır</Text>
+            </View>
+            <ChevronRight size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.appInfo}>
@@ -191,152 +205,96 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 16, paddingBottom: 60 },
   profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 18,
-    borderRadius: 22,
-    marginBottom: 16,
-    marginTop: 4,
-    gap: 14,
-    overflow: 'hidden',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 6,
+    flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 22,
+    marginBottom: 16, marginTop: 4, gap: 14, overflow: 'hidden',
+    shadowColor: Colors.primary, shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2, shadowRadius: 16, elevation: 6,
   },
   profileDeco: {
-    position: 'absolute' as const,
-    top: -40,
-    right: -30,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    position: 'absolute' as const, top: -40, right: -30,
+    width: 160, height: 160, borderRadius: 80,
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
   avatarCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.4)',
+    width: 58, height: 58, borderRadius: 29,
+    backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)',
   },
   avatarText: { fontSize: 24, fontWeight: '800' as const, color: Colors.white, letterSpacing: -0.5 },
   profileInfo: { flex: 1, gap: 6 },
   profileName: { fontSize: 17, fontWeight: '800' as const, color: Colors.white, letterSpacing: -0.3 },
   profileBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    alignSelf: 'flex-start' as const,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' as const,
+    backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
   },
   profileRole: { fontSize: 11, fontWeight: '700' as const, color: Colors.white, letterSpacing: 0.3 },
   quickStatsRow: { flexDirection: 'row', gap: 10, marginBottom: 8 },
   quickStat: {
-    flex: 1,
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    flex: 1, backgroundColor: Colors.white, borderRadius: 16, padding: 14,
+    alignItems: 'center', borderWidth: 1, borderColor: Colors.borderLight,
   },
   qsIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
+    width: 36, height: 36, borderRadius: 12, alignItems: 'center',
+    justifyContent: 'center', marginBottom: 8,
   },
   qsValue: { fontSize: 20, fontWeight: '800' as const, color: Colors.text, letterSpacing: -0.4 },
   qsLabel: { fontSize: 11, color: Colors.textSecondary, fontWeight: '500' as const, marginTop: 1 },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: Colors.textMuted,
-    letterSpacing: 1.2,
-    marginBottom: 8,
-    marginTop: 20,
-    marginLeft: 4,
+    fontSize: 11, fontWeight: '700' as const, color: Colors.textMuted,
+    letterSpacing: 1.2, marginBottom: 8, marginTop: 20, marginLeft: 4,
   },
   card: {
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
+    backgroundColor: Colors.white, borderRadius: 16, overflow: 'hidden',
+    borderWidth: 1, borderColor: Colors.borderLight,
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.success },
   infoRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   infoIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: Colors.primaryVeryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.primaryVeryLight,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   infoContent: { flex: 1 },
   infoTitle: { fontSize: 15, fontWeight: '700' as const, color: Colors.text },
   infoSubtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   actionRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   logoutIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: Colors.primaryVeryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.primaryVeryLight,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   logoutTitle: { fontSize: 15, fontWeight: '700' as const, color: Colors.text },
+  logoutConfirm: { padding: 16 },
+  logoutConfirmText: { fontSize: 14, color: Colors.text, marginBottom: 14, fontWeight: '600' as const },
+  logoutConfirmRow: { flexDirection: 'row', gap: 10 },
+  logoutCancelBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, backgroundColor: Colors.background, borderRadius: 12, paddingVertical: 11,
+    borderWidth: 1, borderColor: Colors.borderLight,
+  },
+  logoutCancelText: { fontSize: 14, fontWeight: '700' as const, color: Colors.textSecondary },
+  logoutDoBtn: {
+    flex: 1.4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 11,
+  },
+  logoutDoBtnText: { fontSize: 14, fontWeight: '800' as const, color: Colors.white },
   adminIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: Colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.primarySoft,
+    alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   appInfo: { alignItems: 'center', marginTop: 36, paddingBottom: 10 },
   appIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
+    width: 44, height: 44, borderRadius: 14, backgroundColor: Colors.white,
+    borderWidth: 1, borderColor: Colors.borderLight,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
   appName: { fontSize: 14, fontWeight: '700' as const, color: Colors.text },
   appVersion: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   creditDivider: {
-    width: 28,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: Colors.primary,
-    opacity: 0.5,
-    marginTop: 14,
-    marginBottom: 10,
+    width: 28, height: 2, borderRadius: 1, backgroundColor: Colors.primary,
+    opacity: 0.5, marginTop: 14, marginBottom: 10,
   },
   creditLabel: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    letterSpacing: 1.5,
-    color: Colors.textMuted,
-    marginBottom: 3,
+    fontSize: 9, fontWeight: '700' as const, letterSpacing: 1.5,
+    color: Colors.textMuted, marginBottom: 3,
   },
   creditName: { fontSize: 13, fontWeight: '700' as const, color: Colors.primary, letterSpacing: 0.3 },
 });

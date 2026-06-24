@@ -4,10 +4,13 @@ import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import { useAuth } from "@/providers/AuthProvider";
 
 export default function MainTabLayout() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 0);
+  const { isStaff } = useAuth();
+
   return (
     <Tabs
       screenOptions={{
@@ -73,6 +76,8 @@ export default function MainTabLayout() {
         name="reports"
         options={{
           title: "Rapor",
+          tabBarItemStyle: isStaff ? tabStyles.hidden : tabStyles.item,
+          tabBarButton: isStaff ? () => null : undefined,
           tabBarIcon: ({ color, focused }) => (
             <View style={[tabStyles.iconWrap, focused && tabStyles.iconWrapActive]}>
               <FileText color={color} size={focused ? 22 : 21} strokeWidth={focused ? 2.4 : 2} />
@@ -109,6 +114,9 @@ const tabStyles = StyleSheet.create({
   },
   item: {
     paddingTop: 4,
+  },
+  hidden: {
+    display: 'none',
   },
   iconWrap: {
     alignItems: 'center',
