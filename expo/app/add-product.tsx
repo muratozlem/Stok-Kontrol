@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,7 +28,7 @@ const UNITS = ['Adet', 'Kg', 'Lt', 'Mt', 'Paket', 'Kutu', 'Çuval', 'Ton'];
 
 export default function AddProductPage() {
   const { addProduct, locations } = useData();
-  const { isSuperAdmin, currentUser } = useAuth();
+  const { isSuperAdmin, isStaff, currentUser } = useAuth();
   const params = useLocalSearchParams<{ barcode?: string }>();
   const [name, setName] = useState<string>('');
   const [barcode, setBarcode] = useState<string>(params.barcode ?? '');
@@ -42,6 +42,10 @@ export default function AddProductPage() {
     isSuperAdmin ? null : (currentUser?.locationId ?? null)
   );
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (isStaff) router.back();
+  }, [isStaff]);
 
   useFocusEffect(
     useCallback(() => {

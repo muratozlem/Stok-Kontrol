@@ -22,12 +22,14 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import EmptyState from '@/components/EmptyState';
 import { Product } from '@/types';
 
 export default function ProductsListPage() {
   const { products, getStockForProduct, getLowStockProducts } = useData();
+  const { isStaff } = useAuth();
   const [search, setSearch] = useState<string>('');
 
   const filteredProducts = useMemo(() => {
@@ -191,8 +193,8 @@ export default function ProductsListPage() {
               ? 'Farklı anahtar kelimeler deneyin'
               : 'İlk ürününüzü ekleyerek başlayın'
           }
-          actionLabel={search ? undefined : 'Ürün Ekle'}
-          onAction={search ? undefined : handleAdd}
+          actionLabel={search || isStaff ? undefined : 'Ürün Ekle'}
+          onAction={search || isStaff ? undefined : handleAdd}
         />
       ) : (
         <FlatList
@@ -205,6 +207,7 @@ export default function ProductsListPage() {
         />
       )}
 
+      {!isStaff && (
       <TouchableOpacity
         style={styles.fab}
         onPress={handleAdd}
@@ -220,6 +223,7 @@ export default function ProductsListPage() {
           <Plus size={26} color={Colors.white} strokeWidth={2.6} />
         </LinearGradient>
       </TouchableOpacity>
+      )}
     </View>
   );
 }
