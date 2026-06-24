@@ -19,7 +19,7 @@ import Colors from '@/constants/colors';
 
 export default function AddWarehousePage() {
   const { addWarehouse, locations } = useData();
-  const { isAdmin, isSuperAdmin, currentUser } = useAuth();
+  const { isAdmin, isChef, isSuperAdmin, currentUser } = useAuth();
 
   const [name, setName] = useState<string>('');
   const [location, setLocation] = useState<string>('');
@@ -29,7 +29,7 @@ export default function AddWarehousePage() {
   );
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
 
-  if (!isAdmin) {
+  if (!isAdmin && !isChef) {
     return (
       <View style={styles.denied}>
         <View style={styles.deniedIconWrap}>
@@ -37,7 +37,7 @@ export default function AddWarehousePage() {
         </View>
         <Text style={styles.deniedTitle}>Yetki Gerekli</Text>
         <Text style={styles.deniedText}>
-          Depo oluşturma yetkisine sahip değilsiniz. Bu işlem yalnızca Süper Admin ve İdari İşler tarafından yapılabilir.
+          Depo oluşturma yetkisine sahip değilsiniz. Bu işlem Süper Admin, İdari İşler ve Şef tarafından yapılabilir.
         </Text>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.8}>
           <Text style={styles.backButtonText}>Geri Dön</Text>
