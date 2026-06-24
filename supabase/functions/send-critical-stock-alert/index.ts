@@ -4,12 +4,28 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+function esc(v: string | number | undefined | null): string {
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildEmailHtml(info: {
   productName: string; unit: string; totalStock: number; criticalLevel: number; locationName?: string;
 }): string {
-  const unit = info.unit ? ` ${info.unit}` : '';
+  const unit = info.unit ? ` ${esc(info.unit)}` : '';
   const locationLine = info.locationName
-    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Lokasyon</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;">${info.locationName}</td></tr>`
+    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Lokasyon</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;">${esc(info.locationName)}</td></tr>`
     : '';
   return `<!doctype html>
 <html>
@@ -19,7 +35,7 @@ function buildEmailHtml(info: {
     <div style="background:linear-gradient(135deg,#1A1D2E,#2d3f56);padding:24px;color:#fff;">
       <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.7;margin-bottom:4px;">Stok Kontrol</div>
       <div style="font-size:13px;letter-spacing:.06em;text-transform:uppercase;opacity:.9;margin-bottom:8px;">Kritik Stok Uyarısı</div>
-      <div style="font-size:22px;font-weight:700;">${info.productName}</div>
+      <div style="font-size:22px;font-weight:700;">${esc(info.productName)}</div>
     </div>
     <div style="padding:24px;color:#222;">
       <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">
@@ -29,11 +45,11 @@ function buildEmailHtml(info: {
         ${locationLine}
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kalan Stok</td>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#D32F2F;font-size:18px;">${info.totalStock}${unit}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#D32F2F;font-size:18px;">${esc(info.totalStock)}${unit}</td>
         </tr>
         <tr>
           <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kritik Seviye</td>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:15px;">${info.criticalLevel}${unit}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:15px;">${esc(info.criticalLevel)}${unit}</td>
         </tr>
         <tr>
           <td style="padding:12px 0;color:#666;font-size:13px;">Tarih</td>
@@ -51,28 +67,56 @@ function buildEmailHtml(info: {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
+    return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
   }
 
   try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Yetkilendirme başlığı eksik' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const anonClient = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    const { data: { user }, error: userError } = await anonClient.auth.getUser();
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Geçersiz oturum' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const { data: callerProfile } = await adminClient
+      .from('profiles')
+      .select('role, status')
+      .eq('id', user.id)
+      .single();
+
+    if (!callerProfile || callerProfile.status !== 'approved' || !['super_admin', 'admin', 'chef'].includes(callerProfile.role)) {
+      return new Response(JSON.stringify({ error: 'Bu işlem için yetkiniz yok' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const body = await req.json();
     const { productId, productName, unit, totalStock, criticalLevel, locationId } = body;
 
     if (!productId || !productName) {
-      return new Response(JSON.stringify({ error: 'productId ve productName zorunludur' }), { status: 400 });
+      return new Response(JSON.stringify({ error: 'productId ve productName zorunludur' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = adminClient;
 
     let locationName: string | undefined;
     if (locationId) {
@@ -99,7 +143,7 @@ Deno.serve(async (req: Request) => {
 
     if (profilesError) {
       console.error('[send-critical-stock-alert] Profil sorgu hatası:', profilesError.message);
-      return new Response(JSON.stringify({ error: profilesError.message }), { status: 500 });
+      return new Response(JSON.stringify({ error: profilesError.message }), { status: 500, headers: corsHeaders });
     }
 
     const recipients: string[] = (adminProfiles ?? [])
@@ -108,7 +152,7 @@ Deno.serve(async (req: Request) => {
 
     if (recipients.length === 0) {
       console.log('[send-critical-stock-alert] Alıcı yok | lokasyon:', locationId ?? '(yok)');
-      return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }));
+      return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }), { headers: corsHeaders });
     }
 
     const htmlContent = buildEmailHtml({
@@ -119,7 +163,7 @@ Deno.serve(async (req: Request) => {
       locationName,
     });
 
-    const locationLabel = locationName ? ` [${locationName}]` : '';
+    const locationLabel = locationName ? ` [${esc(locationName)}]` : '';
     const emailPayload = {
       from: 'Stok Kontrol <onboarding@resend.dev>',
       to: recipients,
@@ -140,7 +184,7 @@ Deno.serve(async (req: Request) => {
 
     if (!resendRes.ok) {
       console.error('[send-critical-stock-alert] Resend hatası:', resendRes.status, JSON.stringify(resendData));
-      return new Response(JSON.stringify({ error: 'Email gönderilemedi', details: resendData }), { status: 500 });
+      return new Response(JSON.stringify({ error: 'Email gönderilemedi', details: resendData }), { status: 500, headers: corsHeaders });
     }
 
     console.log(
@@ -152,11 +196,11 @@ Deno.serve(async (req: Request) => {
       ok: true,
       id: (resendData as { id?: string }).id,
       recipientCount: recipients.length,
-    }));
+    }), { headers: corsHeaders });
 
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[send-critical-stock-alert] Hata:', msg);
-    return new Response(JSON.stringify({ error: msg }), { status: 500 });
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: corsHeaders });
   }
 });

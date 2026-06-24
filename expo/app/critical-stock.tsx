@@ -16,12 +16,14 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import EmptyState from '@/components/EmptyState';
 import { Product } from '@/types';
 
 export default function CriticalStockPage() {
   const { getLowStockProducts, getStockForProduct } = useData();
+  const { isStaff } = useAuth();
   const lowStockProducts = useMemo(
     () => getLowStockProducts(),
     [getLowStockProducts]
@@ -126,6 +128,20 @@ export default function CriticalStockPage() {
         title="Tüm stoklar yeterli!"
         subtitle="Kritik stok seviyesinin altında ürün bulunmuyor. Stok durumunuz sağlıklı görünüyor."
       />
+    );
+  }
+
+  if (isStaff) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
+        <AlertTriangle size={48} color={Colors.textSecondary} strokeWidth={1.5} />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.text, marginTop: 16, textAlign: 'center' }}>
+          Erişim Yok
+        </Text>
+        <Text style={{ fontSize: 14, color: Colors.textSecondary, marginTop: 8, textAlign: 'center' }}>
+          Kritik stok ekranına erişim yetkiniz bulunmuyor.
+        </Text>
+      </View>
     );
   }
 
