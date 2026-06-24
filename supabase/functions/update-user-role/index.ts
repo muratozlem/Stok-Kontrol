@@ -93,8 +93,13 @@ Deno.serve(async (req) => {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
-      const targetLoc = newLocationId || targetProfile.location_id
-      if (targetLoc && callerLocationId && targetLoc !== callerLocationId) {
+      if (!callerLocationId) {
+        return new Response(JSON.stringify({ error: 'Lokasyonunuz tanımlı değil' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      const effectiveLoc = newLocationId || targetProfile.location_id
+      if (effectiveLoc && effectiveLoc !== callerLocationId) {
         return new Response(JSON.stringify({ error: 'Yalnızca kendi lokasyonunuzdaki kullanıcıları yönetebilirsiniz' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
@@ -116,7 +121,15 @@ Deno.serve(async (req) => {
     }
 
     const updateData: Record<string, unknown> = { role: newRole }
-    if (newLocationId !== undefined) updateData.location_id = newLocationId || null
+
+    // Admin'in pending kullanıcıyı onaylaması: lokasyon gönderilmemişse admin'inkini zorla
+    if (callerRole === 'admin' && callerLocationId) {
+      const resolvedLoc = newLocationId !== undefined ? (newLocationId || null) : (targetProfile.location_id || callerLocationId)
+      updateData.location_id = resolvedLoc ?? callerLocationId
+    } else if (newLocationId !== undefined) {
+      updateData.location_id = newLocationId || null
+    }
+
     if (newStatus) {
       const validStatuses: Status[] = ['pending', 'approved', 'rejected']
       if (validStatuses.includes(newStatus)) updateData.status = newStatus
