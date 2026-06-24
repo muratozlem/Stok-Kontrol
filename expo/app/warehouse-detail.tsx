@@ -1,11 +1,10 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,14 +16,18 @@ import {
   ArrowDownLeft,
   Boxes,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 
 export default function WarehouseDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { warehouses, products, inventory, deleteWarehouse } = useData();
+  const { isAdmin, isStaff } = useAuth();
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
 
   const warehouse = useMemo(
     () => warehouses.find((w) => w.id === id),
@@ -46,25 +49,21 @@ export default function WarehouseDetailPage() {
     [warehouseInventory]
   );
 
-  const handleDelete = useCallback(() => {
+  const handleDeleteRequest = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setDeleteConfirming(true);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(() => {
     if (!warehouse) return;
-    Alert.alert(
-      'Depoyu Sil',
-      `"${warehouse.name}" deposunu silmek istediğinize emin misiniz? Bu depodaki stok kayıtları da silinecektir.`,
-      [
-        { text: 'İptal', style: 'cancel' },
-        {
-          text: 'Sil',
-          style: 'destructive',
-          onPress: () => {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            deleteWarehouse(warehouse.id);
-            router.back();
-          },
-        },
-      ]
-    );
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    deleteWarehouse(warehouse.id);
+    router.back();
   }, [warehouse, deleteWarehouse]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setDeleteConfirming(false);
+  }, []);
 
   const handleAddStock = useCallback(() => {
     if (!warehouse) return;
@@ -135,24 +134,49 @@ export default function WarehouseDetailPage() {
       </View>
 
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={styles.addStockBtn}
-          onPress={handleAddStock}
-          activeOpacity={0.85}
-          testID="warehouse-stock-in"
-        >
-          <ArrowDownLeft size={18} color={Colors.white} strokeWidth={2.5} />
-          <Text style={styles.addStockText}>Stok Girişi Yap</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteBtn}
-          onPress={handleDelete}
-          activeOpacity={0.85}
-          testID="warehouse-delete"
-        >
-          <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
-        </TouchableOpacity>
+        {!isStaff && (
+          <TouchableOpacity
+            style={styles.addStockBtn}
+            onPress={handleAddStock}
+            activeOpacity={0.85}
+            testID="warehouse-stock-in"
+          >
+            <ArrowDownLeft size={18} color={Colors.white} strokeWidth={2.5} />
+            <Text style={styles.addStockText}>Stok Girişi Yap</Text>
+          </TouchableOpacity>
+        )}
+        {isAdmin && !deleteConfirming && (
+          <TouchableOpacity
+            style={[styles.deleteBtn, !isStaff && styles.deleteBtnWithStock]}
+            onPress={handleDeleteRequest}
+            activeOpacity={0.85}
+            testID="warehouse-delete"
+          >
+            <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
+          </TouchableOpacity>
+        )}
       </View>
+
+      {deleteConfirming && (
+        <View style={styles.confirmCard}>
+          <View style={styles.confirmIconWrap}>
+            <AlertTriangle size={22} color={Colors.danger} strokeWidth={2.3} />
+          </View>
+          <Text style={styles.confirmTitle}>Depoyu Sil?</Text>
+          <Text style={styles.confirmText}>
+            "{warehouse?.name}" deposunu ve içindeki tüm stok kayıtlarını silmek istediğinize emin misiniz?
+          </Text>
+          <View style={styles.confirmActions}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={handleDeleteCancel} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>İptal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmDeleteBtn} onPress={handleDeleteConfirm} activeOpacity={0.85}>
+              <Trash2 size={16} color={Colors.white} strokeWidth={2.3} />
+              <Text style={styles.confirmDeleteText}>Evet, Sil</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Depodaki Ürünler</Text>
@@ -381,6 +405,78 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Colors.dangerLight,
     borderRadius: 14,
+  },
+  deleteBtnWithStock: {
+    marginLeft: 10,
+  },
+  confirmCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.dangerLight,
+    gap: 6,
+    shadowColor: Colors.danger,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  confirmIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.dangerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  confirmTitle: {
+    fontSize: 17,
+    fontWeight: '800' as const,
+    color: Colors.danger,
+    letterSpacing: -0.3,
+  },
+  confirmText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  confirmCancelText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+  },
+  confirmDeleteBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.danger,
+    gap: 6,
+  },
+  confirmDeleteText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.white,
   },
   sectionHeader: {
     flexDirection: 'row',

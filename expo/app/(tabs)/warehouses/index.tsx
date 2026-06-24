@@ -18,12 +18,14 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import EmptyState from '@/components/EmptyState';
 import { Warehouse } from '@/types';
 
 export default function WarehouseListPage() {
   const { warehouses, inventory } = useData();
+  const { isAdmin } = useAuth();
 
   const warehouseStats = useMemo(() => {
     const stats: Record<string, { productCount: number; totalStock: number }> =
@@ -153,9 +155,9 @@ export default function WarehouseListPage() {
         <EmptyState
           icon={<WarehouseIcon size={32} color={Colors.primary} />}
           title="Henüz depo yok"
-          subtitle="İlk deponuzu ekleyerek stok yönetimine başlayın"
-          actionLabel="Depo Ekle"
-          onAction={handleAdd}
+          subtitle={isAdmin ? 'İlk deponuzu ekleyerek stok yönetimine başlayın' : 'Henüz size atanmış depo bulunmuyor'}
+          actionLabel={isAdmin ? 'Depo Ekle' : undefined}
+          onAction={isAdmin ? handleAdd : undefined}
         />
       ) : (
         <FlatList
@@ -168,21 +170,23 @@ export default function WarehouseListPage() {
         />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={handleAdd}
-        activeOpacity={0.9}
-        testID="add-warehouse-btn"
-      >
-        <LinearGradient
-          colors={[Colors.gradientStart, Colors.gradientEnd]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.fabGradient}
+      {isAdmin && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleAdd}
+          activeOpacity={0.9}
+          testID="add-warehouse-btn"
         >
-          <Plus size={26} color={Colors.white} strokeWidth={2.6} />
-        </LinearGradient>
-      </TouchableOpacity>
+          <LinearGradient
+            colors={[Colors.gradientStart, Colors.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.fabGradient}
+          >
+            <Plus size={26} color={Colors.white} strokeWidth={2.6} />
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

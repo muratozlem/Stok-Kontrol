@@ -6,36 +6,62 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Save, MapPin, Warehouse, FileText } from 'lucide-react-native';
+import { Save, MapPin, Warehouse, FileText, Lock, ChevronDown, ChevronUp } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 
 export default function AddWarehousePage() {
-  const { addWarehouse } = useData();
+  const { addWarehouse, locations } = useData();
+  const { isAdmin, isSuperAdmin, currentUser } = useAuth();
+
   const [name, setName] = useState<string>('');
   const [location, setLocation] = useState<string>('');
   const [description, setDescription] = useState<string>('');
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
+    isSuperAdmin ? null : (currentUser?.locationId ?? null)
+  );
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+
+  if (!isAdmin) {
+    return (
+      <View style={styles.denied}>
+        <View style={styles.deniedIconWrap}>
+          <Lock size={36} color={Colors.textMuted} strokeWidth={2} />
+        </View>
+        <Text style={styles.deniedTitle}>Yetki Gerekli</Text>
+        <Text style={styles.deniedText}>
+          Depo oluşturma yetkisine sahip değilsiniz. Bu işlem yalnızca Süper Admin ve İdari İşler tarafından yapılabilir.
+        </Text>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.8}>
+          <Text style={styles.backButtonText}>Geri Dön</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const handleSave = useCallback(() => {
     if (!name.trim()) {
-      Alert.alert('Hata', 'Depo adı zorunludur.');
       return;
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const locationIdToUse = isSuperAdmin ? selectedLocationId : (currentUser?.locationId ?? null);
     addWarehouse({
       name: name.trim(),
       location: location.trim(),
       description: description.trim(),
+      locationId: locationIdToUse,
     });
     router.back();
-  }, [name, location, description, addWarehouse]);
+  }, [name, location, description, addWarehouse, isSuperAdmin, selectedLocationId, currentUser]);
+
+  const selectedLocationName = locations.find(l => l.id === selectedLocationId)?.name;
 
   return (
     <KeyboardAvoidingView
@@ -78,14 +104,14 @@ export default function AddWarehousePage() {
             />
           </View>
 
-          <Text style={styles.label}>Konum</Text>
+          <Text style={styles.label}>Konum Notu</Text>
           <View style={styles.inputWrap}>
             <MapPin size={18} color={Colors.textMuted} />
             <TextInput
               style={styles.input}
               value={location}
               onChangeText={setLocation}
-              placeholder="Konum bilgisi (opsiyonel)"
+              placeholder="Kat, bina, adres notu (opsiyonel)"
               placeholderTextColor={Colors.textMuted}
             />
           </View>
@@ -104,16 +130,75 @@ export default function AddWarehousePage() {
               textAlignVertical="top"
             />
           </View>
+
+          {isSuperAdmin ? (
+            <>
+              <Text style={styles.label}>Lokasyon</Text>
+              <TouchableOpacity
+                style={styles.inputWrap}
+                onPress={() => setLocationPickerOpen(v => !v)}
+                activeOpacity={0.7}
+              >
+                <MapPin size={18} color={Colors.textMuted} />
+                <Text style={[styles.input, !selectedLocationId && { color: Colors.textMuted }]}>
+                  {selectedLocationName ?? 'Lokasyon seçin (opsiyonel)'}
+                </Text>
+                {locationPickerOpen
+                  ? <ChevronUp size={18} color={Colors.textMuted} />
+                  : <ChevronDown size={18} color={Colors.textMuted} />
+                }
+              </TouchableOpacity>
+              {locationPickerOpen && (
+                <View style={styles.pickerList}>
+                  <TouchableOpacity
+                    style={[styles.pickerItem, !selectedLocationId && styles.pickerItemSelected]}
+                    onPress={() => { setSelectedLocationId(null); setLocationPickerOpen(false); }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.pickerItemText, !selectedLocationId && styles.pickerItemTextSelected]}>
+                      — Lokasyon atama
+                    </Text>
+                  </TouchableOpacity>
+                  {locations.map(loc => (
+                    <TouchableOpacity
+                      key={loc.id}
+                      style={[styles.pickerItem, selectedLocationId === loc.id && styles.pickerItemSelected]}
+                      onPress={() => { setSelectedLocationId(loc.id); setLocationPickerOpen(false); }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pickerItemText, selectedLocationId === loc.id && styles.pickerItemTextSelected]}>
+                        {loc.name}{loc.city ? ` — ${loc.city}` : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
+          ) : (
+            currentUser?.locationId && (
+              <>
+                <Text style={styles.label}>Lokasyon</Text>
+                <View style={[styles.inputWrap, styles.inputWrapReadonly]}>
+                  <MapPin size={18} color={Colors.primary} />
+                  <Text style={[styles.input, { color: Colors.primary }]}>
+                    {locations.find(l => l.id === currentUser.locationId)?.name ?? 'Kendi lokasyonunuz'}
+                  </Text>
+                  <Lock size={14} color={Colors.textMuted} />
+                </View>
+              </>
+            )
+          )}
         </View>
 
         <TouchableOpacity
-          style={styles.saveButton}
+          style={[styles.saveButton, !name.trim() && styles.saveButtonDisabled]}
           onPress={handleSave}
           activeOpacity={0.9}
+          disabled={!name.trim()}
           testID="save-warehouse-btn"
         >
           <LinearGradient
-            colors={[Colors.gradientStart, Colors.gradientEnd]}
+            colors={name.trim() ? [Colors.gradientStart, Colors.gradientEnd] : ['#ccc', '#bbb']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.saveButtonGradient}
@@ -130,15 +215,49 @@ export default function AddWarehousePage() {
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
-  container: {
+  flex: { flex: 1 },
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 20 },
+  denied: {
     flex: 1,
     backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
   },
-  content: {
-    padding: 20,
+  deniedIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  deniedTitle: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  deniedText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  backButton: {
+    marginTop: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+  },
+  backButtonText: {
+    color: Colors.white,
+    fontWeight: '700' as const,
+    fontSize: 15,
   },
   iconHeader: {
     alignItems: 'center',
@@ -215,16 +334,42 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start' as const,
     paddingVertical: 12,
   },
-  iconTop: {
-    marginTop: 3,
+  inputWrapReadonly: {
+    backgroundColor: Colors.primaryVeryLight,
+    borderColor: Colors.primary,
   },
+  iconTop: { marginTop: 3 },
   input: {
     flex: 1,
     fontSize: 15,
     color: Colors.text,
   },
-  textArea: {
-    minHeight: 80,
+  textArea: { minHeight: 80 },
+  pickerList: {
+    marginTop: 4,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    overflow: 'hidden',
+  },
+  pickerItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  pickerItemSelected: {
+    backgroundColor: Colors.primaryVeryLight,
+  },
+  pickerItemText: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500' as const,
+  },
+  pickerItemTextSelected: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
   },
   saveButton: {
     marginTop: 22,
@@ -235,6 +380,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 5,
+  },
+  saveButtonDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
   },
   saveButtonGradient: {
     flexDirection: 'row',
@@ -249,7 +398,5 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     letterSpacing: 0.3,
   },
-  bottomSpacer: {
-    height: 40,
-  },
+  bottomSpacer: { height: 40 },
 });
