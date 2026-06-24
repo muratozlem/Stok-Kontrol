@@ -5,3 +5,4 @@
 - [Build pattern](build-pattern.md) — Expo web build: kill all processes first, then `bunx expo export -p web --output-dir dist` synchronously (needs ~2min); workflow serves `dist` via `bunx serve dist -l 5000 --single`.
 - [Role System](role-system.md) — 4-tier: super_admin > admin (İdari İşler) > chef (Şef) > staff (Personel); locations table added; update-user-role edge function handles role+location assignments with caller validation.
 - [Supabase CLI unavailable](build-pattern.md) — No Supabase CLI in environment; deploy edge functions via Management API PATCH/POST with jq for JSON encoding; apply SQL via `/database/query` endpoint.
+- [Supabase Edge Deploy](supabase-edge-deploy.md) — PATCH API strips first 4 bytes of body; prepend `/**/`; use `npm:@supabase/supabase-js@2` not `esm.sh` (esm.sh → BOOT_ERROR).
