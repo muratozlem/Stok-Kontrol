@@ -90,7 +90,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         body: { email: cleanEmail, password },
       });
 
-      if (error) throw new Error(error.message ?? 'Kayıt oluşturulamadı');
+      if (error) {
+        let msg = 'Kayıt oluşturulamadı';
+        try {
+          const body = await (error as { context?: Response }).context?.json?.();
+          if (body?.error) msg = body.error;
+          else if (error.message && !error.message.includes('non-2xx')) msg = error.message;
+        } catch {}
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
 
       const status = data.status as 'pending' | 'approved';
