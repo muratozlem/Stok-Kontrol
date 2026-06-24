@@ -1,5 +1,5 @@
 import { createServerSupabase } from '@/lib/supabase-server'
-import { MapPin, Warehouse, Users, Building2, Package, Hash } from 'lucide-react'
+import { MapPin, Warehouse, Users, Building2, Package, Hash, AlertTriangle } from 'lucide-react'
 
 export default async function LocationsPage() {
   const supabase = createServerSupabase()
@@ -8,7 +8,7 @@ export default async function LocationsPage() {
     supabase.from('locations').select('id, name, city, description, created_at').order('name'),
     supabase.from('warehouses').select('id, location_id'),
     supabase.from('profiles').select('id, location_id').not('location_id', 'is', null),
-    supabase.from('inventory').select('product_id, quantity, warehouses!inner(location_id)'),
+    supabase.from('inventory').select('product_id, quantity, warehouses!inner(location_id), products!inner(min_quantity)'),
   ])
 
   const locations = locationsRes.data ?? []
@@ -26,13 +26,16 @@ export default async function LocationsPage() {
     if (p.location_id) usersByLoc[p.location_id] = (usersByLoc[p.location_id] ?? 0) + 1
   }
 
-  const productsByLoc: Record<string, { varieties: Set<string>; total: number }> = {}
+  const productsByLoc: Record<string, { varieties: Set<string>; total: number; critical: Set<string> }> = {}
   for (const inv of inventory) {
     const locId = (inv.warehouses as any)?.location_id
     if (!locId) continue
-    if (!productsByLoc[locId]) productsByLoc[locId] = { varieties: new Set(), total: 0 }
+    if (!productsByLoc[locId]) productsByLoc[locId] = { varieties: new Set(), total: 0, critical: new Set() }
     productsByLoc[locId].varieties.add(inv.product_id)
     productsByLoc[locId].total += inv.quantity ?? 0
+    const qty = inv.quantity ?? 0
+    const minQty = (inv.products as any)?.min_quantity ?? 0
+    if (qty <= minQty) productsByLoc[locId].critical.add(inv.product_id)
   }
 
   return (
@@ -55,6 +58,7 @@ export default async function LocationsPage() {
           const pData = productsByLoc[loc.id]
           const varieties = pData?.varieties.size ?? 0
           const totalQty = pData?.total ?? 0
+          const criticalCount = pData?.critical.size ?? 0
           return (
             <div key={loc.id} className="glass p-5 space-y-4 hover:bg-white/10 transition-colors">
               <div className="flex items-start gap-3">
@@ -112,6 +116,16 @@ export default async function LocationsPage() {
                     <p className="text-[10px] text-slate-500">Toplam Adet</p>
                   </div>
                 </div>
+              </div>
+
+              <div className={`flex items-center gap-2 rounded-xl px-3 py-2 border ${criticalCount > 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-white/3 border-white/5'}`}>
+                <AlertTriangle className={`w-4 h-4 flex-shrink-0 ${criticalCount > 0 ? 'text-red-400' : 'text-slate-600'}`} />
+                <div className="flex-1">
+                  <p className="text-[10px] text-slate-500">Kritik Stok</p>
+                </div>
+                <p className={`text-base font-bold ${criticalCount > 0 ? 'text-red-400' : 'text-slate-600'}`}>
+                  {criticalCount} çeşit
+                </p>
               </div>
 
               <p className="text-[10px] text-slate-600">
