@@ -20,6 +20,8 @@ import {
   ArrowUpRight,
   ChevronRight,
   TrendingUp,
+  MapPin,
+  Shield,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
@@ -42,8 +44,22 @@ export default function DashboardPage() {
     isLoading,
     getLowStockProducts,
     getTodayTransactionCount,
+    locations,
   } = useData();
   const { currentUser } = useAuth();
+
+  const locationName = useMemo(() => {
+    if (!currentUser?.locationId) return null;
+    return locations.find(l => l.id === currentUser.locationId)?.name ?? null;
+  }, [currentUser?.locationId, locations]);
+
+  const ROLE_LABELS: Record<string, string> = {
+    super_admin: 'Süper Admin',
+    admin: 'İdari İşler',
+    chef: 'Şef',
+    staff: 'Personel',
+  };
+  const roleLabel = currentUser?.role ? (ROLE_LABELS[currentUser.role] ?? currentUser.role) : null;
 
   const lowStockProducts = useMemo(() => getLowStockProducts(), [getLowStockProducts]);
   const todayCount = useMemo(() => getTodayTransactionCount(), [getTodayTransactionCount]);
@@ -167,6 +183,22 @@ export default function DashboardPage() {
             </View>
           </View>
           <Text style={styles.greetingSubtitle}>{dateStr}</Text>
+          {(roleLabel || locationName) && (
+            <View style={styles.userInfoRow}>
+              {roleLabel && (
+                <View style={styles.roleChip}>
+                  <Shield size={11} color={Colors.primary} strokeWidth={2.4} />
+                  <Text style={styles.roleChipText}>{roleLabel}</Text>
+                </View>
+              )}
+              {locationName && (
+                <View style={styles.locationChip}>
+                  <MapPin size={11} color={ORANGE} strokeWidth={2.4} />
+                  <Text style={styles.locationChipText}>{locationName}</Text>
+                </View>
+              )}
+            </View>
+          )}
         </Animated.View>
 
         {/* Stat Cards */}
@@ -413,6 +445,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textMuted,
     textTransform: 'capitalize' as const,
+  },
+  userInfoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  roleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEE8F8',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D0BCF0',
+  },
+  roleChipText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#7B2FBE',
+  },
+  locationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF3E8',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FFD4AA',
+  },
+  locationChipText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: ORANGE,
   },
 
   statsRow: {
