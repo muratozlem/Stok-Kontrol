@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd expo && bunx serve dist -l 5000 --single"
+args = "cd dashboard && bun run dev"
 waitForPort = 5000
 
 [[ports]]
