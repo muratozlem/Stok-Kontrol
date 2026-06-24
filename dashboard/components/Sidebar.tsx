@@ -5,15 +5,16 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import {
   LayoutDashboard, Package, Users, FileText,
-  ChevronLeft, ChevronRight, BarChart3, LogOut, Warehouse
+  ChevronLeft, ChevronRight, BarChart3, LogOut, Warehouse, MapPin
 } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
-  { href: '/dashboard/products', label: 'Ürünler & Stok', icon: Package },
-  { href: '/dashboard/warehouses', label: 'Depolar', icon: Warehouse },
-  { href: '/dashboard/users', label: 'Kullanıcılar', icon: Users },
-  { href: '/dashboard/reports', label: 'Raporlar', icon: FileText },
+  { href: '/dashboard', label: 'Genel Bakış', icon: LayoutDashboard, roles: ['super_admin', 'admin'] },
+  { href: '/dashboard/products', label: 'Ürünler & Stok', icon: Package, roles: ['super_admin', 'admin'] },
+  { href: '/dashboard/warehouses', label: 'Depolar', icon: Warehouse, roles: ['super_admin', 'admin'] },
+  { href: '/dashboard/locations', label: 'Lokasyonlar', icon: MapPin, roles: ['super_admin'] },
+  { href: '/dashboard/users', label: 'Kullanıcılar', icon: Users, roles: ['super_admin', 'admin'] },
+  { href: '/dashboard/reports', label: 'Raporlar', icon: FileText, roles: ['super_admin', 'admin'] },
 ]
 
 export default function Sidebar({ userEmail, userRole }: { userEmail: string; userRole: string }) {
@@ -42,7 +43,7 @@ export default function Sidebar({ userEmail, userRole }: { userEmail: string; us
       </div>
 
       <nav className="flex-1 py-4 px-2 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {navItems.filter(item => item.roles.includes(userRole)).map(({ href, label, icon: Icon }) => {
           const active = pathname === href
           return (
             <Link
