@@ -1,0 +1,65 @@
+-- ================================================================
+--  2. PRODUCTS (ÜRÜNLER) TABLOSU GÜNCELLEMESİ
+-- ================================================================
+-- Eski hatalı kuralı siliyoruz
+DROP POLICY IF EXISTS "products_approved_users" ON public.products;
+
+-- Herkes ürün kataloğunu görebilir
+CREATE POLICY "products_select_approved" ON public.products
+  FOR SELECT TO authenticated
+  USING (is_approved_user());
+
+-- Sadece Şef, Admin ve Super Admin ürün ekleyebilir/güncelleyebilir/silebilir
+CREATE POLICY "products_modify_sef" ON public.products
+  FOR ALL TO authenticated
+  USING (is_sef())
+  WITH CHECK (is_sef());
+
+
+-- ================================================================
+--  3. TRANSACTIONS (İŞLEM GEÇMİŞİ) TABLOSU GÜNCELLEMESİ
+-- ================================================================
+-- Eski hatalı kuralı siliyoruz
+DROP POLICY IF EXISTS "transactions_approved_users" ON public.transactions;
+
+-- Herkes işlem geçmişini okuyabilir
+CREATE POLICY "transactions_select" ON public.transactions
+  FOR SELECT TO authenticated
+  USING (is_approved_user());
+
+-- Herkes yaptığı işlemi sisteme kaydedebilir (INSERT)
+CREATE POLICY "transactions_insert" ON public.transactions
+  FOR INSERT TO authenticated
+  WITH CHECK (is_approved_user());
+
+-- İşlem GEÇMİŞİNİ DÜZENLEMEK sadece Admin ve Super Admin'e özel
+CREATE POLICY "transactions_modify_admin" ON public.transactions
+  FOR UPDATE TO authenticated
+  USING (is_admin());
+
+-- İşlem GEÇMİŞİNİ SİLMEK sadece Admin ve Super Admin'e özel
+CREATE POLICY "transactions_delete_admin" ON public.transactions
+  FOR DELETE TO authenticated
+  USING (is_admin());
+
+
+-- ================================================================
+--  4. PROFILES (KULLANICI VE YETKİ) TABLOSU GÜNCELLEMESİ
+-- ================================================================
+-- Eski kuralı siliyoruz
+DROP POLICY IF EXISTS "profiles_update_admin_strict" ON public.profiles;
+
+-- Şef sadece "staff"ı, Admin ise kendi altındakileri güncelleyebilir
+CREATE POLICY "profiles_update_strict_hierarchy" ON public.profiles
+  FOR UPDATE TO authenticated
+  USING (
+    is_super_admin()
+    OR (
+      location_id = get_user_location() -- Aynı lokasyonda olmak ŞART
+      AND (
+        (is_admin() AND role NOT IN ('super_admin', 'admin')) -- Admin, kendisini/super_admin'i değil, şef ve personeli günceller
+        OR 
+        (is_sef() AND role = 'staff') -- Şef SADECE personeli ('staff') günceller
+      )
+    )
+  );
