@@ -25,7 +25,8 @@ import { Warehouse } from '@/types';
 
 export default function WarehouseListPage() {
   const { warehouses, inventory } = useData();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isChef } = useAuth();
+  const canManageWarehouse = isAdmin || isChef;
 
   const warehouseStats = useMemo(() => {
     const stats: Record<string, { productCount: number; totalStock: number }> =
@@ -155,9 +156,9 @@ export default function WarehouseListPage() {
         <EmptyState
           icon={<WarehouseIcon size={32} color={Colors.primary} />}
           title="Henüz depo yok"
-          subtitle={isAdmin ? 'İlk deponuzu ekleyerek stok yönetimine başlayın' : 'Henüz size atanmış depo bulunmuyor'}
-          actionLabel={isAdmin ? 'Depo Ekle' : undefined}
-          onAction={isAdmin ? handleAdd : undefined}
+          subtitle={canManageWarehouse ? 'İlk deponuzu ekleyerek stok yönetimine başlayın' : 'Henüz size atanmış depo bulunmuyor'}
+          actionLabel={canManageWarehouse ? 'Depo Ekle' : undefined}
+          onAction={canManageWarehouse ? handleAdd : undefined}
         />
       ) : (
         <FlatList
@@ -170,7 +171,7 @@ export default function WarehouseListPage() {
         />
       )}
 
-      {isAdmin && (
+      {canManageWarehouse && (
         <TouchableOpacity
           style={styles.fab}
           onPress={handleAdd}

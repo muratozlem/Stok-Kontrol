@@ -26,7 +26,8 @@ import Colors from '@/constants/colors';
 export default function WarehouseDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { warehouses, products, inventory, deleteWarehouse } = useData();
-  const { isAdmin, isStaff } = useAuth();
+  const { isAdmin, isChef, isStaff } = useAuth();
+  const canManageWarehouse = isAdmin || isChef;
   const [deleteConfirming, setDeleteConfirming] = useState(false);
 
   const warehouse = useMemo(
@@ -145,7 +146,7 @@ export default function WarehouseDetailPage() {
             <Text style={styles.addStockText}>Stok Girişi Yap</Text>
           </TouchableOpacity>
         )}
-        {isAdmin && !deleteConfirming && (
+        {canManageWarehouse && !deleteConfirming && (
           <TouchableOpacity
             style={[styles.deleteBtn, !isStaff && styles.deleteBtnWithStock]}
             onPress={handleDeleteRequest}
