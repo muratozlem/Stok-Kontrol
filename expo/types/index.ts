@@ -7,6 +7,7 @@ export interface Product {
   imageUrl: string;
   criticalStockLevel: number;
   createdAt: string;
+  locationId?: string | null;
 }
 
 export interface Location {

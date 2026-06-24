@@ -12,12 +12,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { Camera, Save, ScanBarcode, ImageIcon } from 'lucide-react-native';
+import { Camera, Save, ScanBarcode, ImageIcon, MapPin, ChevronDown, ChevronUp } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import { uploadProductImage } from '@/utils/imageUpload';
 import Colors from '@/constants/colors';
 
@@ -26,7 +27,8 @@ const CAPTURED_IMAGE_KEY = '__captured_product_image__';
 const UNITS = ['Adet', 'Kg', 'Lt', 'Mt', 'Paket', 'Kutu', 'Çuval', 'Ton'];
 
 export default function AddProductPage() {
-  const { addProduct } = useData();
+  const { addProduct, locations } = useData();
+  const { isSuperAdmin, currentUser } = useAuth();
   const params = useLocalSearchParams<{ barcode?: string }>();
   const [name, setName] = useState<string>('');
   const [barcode, setBarcode] = useState<string>(params.barcode ?? '');
@@ -36,6 +38,10 @@ export default function AddProductPage() {
   const [imageUri, setImageUri] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(
+    isSuperAdmin ? null : (currentUser?.locationId ?? null)
+  );
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -111,6 +117,7 @@ export default function AddProductPage() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
+      const locationIdToUse = isSuperAdmin ? selectedLocationId : (currentUser?.locationId ?? null);
       await addProduct({
         name: name.trim(),
         barcode: barcode.trim(),
@@ -118,6 +125,7 @@ export default function AddProductPage() {
         unit,
         imageUrl: finalImageUrl,
         criticalStockLevel: parseInt(criticalLevel, 10) || 0,
+        locationId: locationIdToUse,
       });
 
       router.back();
@@ -259,6 +267,55 @@ export default function AddProductPage() {
           keyboardType="numeric"
           testID="critical-level-input"
         />
+
+        {isSuperAdmin && (
+          <>
+            <Text style={styles.label}>Lokasyon</Text>
+            <TouchableOpacity
+              style={styles.pickerBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setLocationPickerOpen(v => !v);
+              }}
+              activeOpacity={0.8}
+            >
+              <MapPin size={16} color={Colors.primary} strokeWidth={2.3} />
+              <Text style={[styles.pickerBtnText, !selectedLocationId && styles.pickerBtnPlaceholder]}>
+                {selectedLocationId
+                  ? (locations.find(l => l.id === selectedLocationId)?.name ?? 'Lokasyon seçin')
+                  : 'Lokasyon seçin (opsiyonel)'}
+              </Text>
+              {locationPickerOpen
+                ? <ChevronUp size={16} color={Colors.textSecondary} />
+                : <ChevronDown size={16} color={Colors.textSecondary} />}
+            </TouchableOpacity>
+            {locationPickerOpen && (
+              <View style={styles.pickerDropdown}>
+                <TouchableOpacity
+                  style={[styles.pickerOption, !selectedLocationId && styles.pickerOptionActive]}
+                  onPress={() => { setSelectedLocationId(null); setLocationPickerOpen(false); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.pickerOptionText, !selectedLocationId && styles.pickerOptionTextActive]}>
+                    Tüm Lokasyonlar
+                  </Text>
+                </TouchableOpacity>
+                {locations.map(loc => (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[styles.pickerOption, selectedLocationId === loc.id && styles.pickerOptionActive]}
+                    onPress={() => { setSelectedLocationId(loc.id); setLocationPickerOpen(false); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.pickerOptionText, selectedLocationId === loc.id && styles.pickerOptionTextActive]}>
+                      {loc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </>
+        )}
 
         <TouchableOpacity
           style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
@@ -467,5 +524,52 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 40,
+  },
+  pickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pickerBtnText: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.text,
+    fontWeight: '500' as const,
+  },
+  pickerBtnPlaceholder: {
+    color: Colors.textMuted,
+    fontWeight: '400' as const,
+  },
+  pickerDropdown: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  pickerOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  pickerOptionActive: {
+    backgroundColor: Colors.primaryVeryLight,
+  },
+  pickerOptionText: {
+    fontSize: 14,
+    color: Colors.text,
+    fontWeight: '500' as const,
+  },
+  pickerOptionTextActive: {
+    color: Colors.primary,
+    fontWeight: '700' as const,
   },
 });

@@ -27,6 +27,7 @@ async function fetchProducts(): Promise<Product[]> {
       imageUrl: p.image_url ?? '',
       criticalStockLevel: p.critical_stock_level ?? 0,
       createdAt: p.created_at,
+      locationId: p.location_id ?? null,
     }));
   } catch (e) {
     console.log('[Data] Products network error:', (e as Error).message);
@@ -228,13 +229,18 @@ export const [DataProvider, useData] = createContextHook(() => {
     };
   }, [queryClient]);
 
-  const products = useMemo(() => productsQuery.data ?? [], [productsQuery.data]);
+  const allProducts = useMemo(() => productsQuery.data ?? [], [productsQuery.data]);
   const allLocations = useMemo(() => locationsQuery.data ?? [], [locationsQuery.data]);
   const allWarehouses = useMemo(() => warehousesQuery.data ?? [], [warehousesQuery.data]);
   const inventory = useMemo(() => inventoryQuery.data ?? [], [inventoryQuery.data]);
   const allTransactions = useMemo(() => transactionsQuery.data ?? [], [transactionsQuery.data]);
 
   const userLocationId = currentUser?.locationId ?? null;
+
+  const products = useMemo(() => {
+    if (isSuperAdmin || !userLocationId) return allProducts;
+    return allProducts.filter(p => !p.locationId || p.locationId === userLocationId);
+  }, [allProducts, isSuperAdmin, userLocationId]);
 
   const warehouses = useMemo(() => {
     if (isSuperAdmin || !userLocationId) return allWarehouses;
@@ -261,6 +267,7 @@ export const [DataProvider, useData] = createContextHook(() => {
           unit: product.unit,
           image_url: product.imageUrl,
           critical_stock_level: product.criticalStockLevel,
+          location_id: product.locationId ?? null,
         })
         .select()
         .single();
@@ -271,7 +278,7 @@ export const [DataProvider, useData] = createContextHook(() => {
         id: data.id, name: data.name, barcode: data.barcode ?? '',
         description: data.description ?? '', unit: data.unit ?? '',
         imageUrl: data.image_url ?? '', criticalStockLevel: data.critical_stock_level ?? 0,
-        createdAt: data.created_at,
+        createdAt: data.created_at, locationId: data.location_id ?? null,
       } as Product;
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['products'] }); },
@@ -484,8 +491,10 @@ export const [DataProvider, useData] = createContextHook(() => {
   const deleteWarehouse = useCallback((id: string) => deleteWarehouseMutation.mutate(id), [deleteWarehouseMutation]);
 
   const getStockForProduct = useCallback((productId: string): number => {
-    return inventory.filter(i => i.productId === productId).reduce((sum, i) => sum + i.quantity, 0);
-  }, [inventory]);
+    return inventory
+      .filter(i => i.productId === productId && warehouseIds.has(i.warehouseId))
+      .reduce((sum, i) => sum + i.quantity, 0);
+  }, [inventory, warehouseIds]);
 
   const getStockForProductInWarehouse = useCallback((productId: string, warehouseId: string): number => {
     return inventory.find(i => i.productId === productId && i.warehouseId === warehouseId)?.quantity ?? 0;
@@ -520,6 +529,7 @@ export const [DataProvider, useData] = createContextHook(() => {
 
   return {
     products,
+    allProducts,
     locations: allLocations,
     warehouses,
     allWarehouses,
