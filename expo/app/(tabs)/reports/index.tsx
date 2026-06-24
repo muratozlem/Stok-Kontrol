@@ -25,6 +25,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useMutation } from '@tanstack/react-query';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import EmptyState from '@/components/EmptyState';
 
@@ -42,6 +43,7 @@ function esc(v: string | number | undefined | null): string {
 export default function ReportsPage() {
   const { products, warehouses, inventory, getStockForProductInWarehouse, getStockForProduct } =
     useData();
+  const { isStaff } = useAuth();
 
   const [selectedWarehouses, setSelectedWarehouses] = useState<string[]>([ALL_ID]);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([ALL_ID]);
@@ -520,6 +522,20 @@ export default function ReportsPage() {
 
   const isWhAll = selectedWarehouses.includes(ALL_ID);
   const isPrAll = selectedProducts.includes(ALL_ID);
+
+  if (isStaff) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
+        <FileText size={48} color={Colors.textSecondary} strokeWidth={1.5} />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.text, marginTop: 16, textAlign: 'center' }}>
+          Erişim Yok
+        </Text>
+        <Text style={{ fontSize: 14, color: Colors.textSecondary, marginTop: 8, textAlign: 'center' }}>
+          Rapor oluşturma yetkisi bulunmuyor.
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
