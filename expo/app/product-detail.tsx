@@ -21,11 +21,13 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
+import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import TransactionRow from '@/components/TransactionRow';
 
 export default function ProductDetailPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { isStaff } = useAuth();
   const {
     products,
     warehouses,
@@ -177,15 +179,17 @@ export default function ProductDetailPage() {
       </View>
 
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: Colors.stockIn }]}
-          onPress={handleStockIn}
-          activeOpacity={0.85}
-          testID="detail-stock-in"
-        >
-          <ArrowDownLeft size={18} color={Colors.white} strokeWidth={2.5} />
-          <Text style={styles.actionBtnText}>Giriş</Text>
-        </TouchableOpacity>
+        {!isStaff && (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: Colors.stockIn }]}
+            onPress={handleStockIn}
+            activeOpacity={0.85}
+            testID="detail-stock-in"
+          >
+            <ArrowDownLeft size={18} color={Colors.white} strokeWidth={2.5} />
+            <Text style={styles.actionBtnText}>Giriş</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: Colors.stockOut }]}
           onPress={handleStockOut}
@@ -195,14 +199,16 @@ export default function ProductDetailPage() {
           <ArrowUpRight size={18} color={Colors.white} strokeWidth={2.5} />
           <Text style={styles.actionBtnText}>Çıkış</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteBtn}
-          onPress={handleDelete}
-          activeOpacity={0.85}
-          testID="detail-delete"
-        >
-          <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
-        </TouchableOpacity>
+        {!isStaff && (
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={handleDelete}
+            activeOpacity={0.85}
+            testID="detail-delete"
+          >
+            <Trash2 size={18} color={Colors.danger} strokeWidth={2.3} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>Depo Bazlı Stok</Text>
