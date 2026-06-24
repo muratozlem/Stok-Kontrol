@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (!callerProfile || callerProfile.role !== 'admin') {
+    if (!callerProfile || !['super_admin', 'admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Yetkisiz erişim' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
