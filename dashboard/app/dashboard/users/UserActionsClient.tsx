@@ -5,7 +5,7 @@ import { CheckCircle, XCircle, ChevronDown } from 'lucide-react'
 
 interface Props {
   userId: string
-  approved: boolean
+  status: string
   locations: { id: string; name: string }[]
   currentLocationId: string | null
   currentRole: string
@@ -31,7 +31,7 @@ async function callUserAction(body: object) {
   return res.json()
 }
 
-export default function UserActionsClient({ userId, approved, currentRole }: Props) {
+export default function UserActionsClient({ userId, status, currentRole }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
@@ -70,13 +70,13 @@ export default function UserActionsClient({ userId, approved, currentRole }: Pro
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2 justify-end flex-wrap">
-        {!approved && (
+        {status !== 'approved' && (
           <button onClick={approve} disabled={loading}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all text-xs font-medium disabled:opacity-50">
             <CheckCircle className="w-3 h-3" /> Onayla
           </button>
         )}
-        {approved && (
+        {status === 'approved' && (
           <button onClick={reject} disabled={loading}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all text-xs font-medium disabled:opacity-50">
             <XCircle className="w-3 h-3" /> Askıya Al

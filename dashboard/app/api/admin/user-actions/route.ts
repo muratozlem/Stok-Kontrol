@@ -3,9 +3,6 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 
 function getCallerSupabase(request: NextRequest) {
-  const cookies: Record<string, string> = {}
-  request.cookies.getAll().forEach(({ name, value }) => { cookies[name] = value })
-
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -34,7 +31,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data: callerProfile } = await adminClient
     .from('profiles')
-    .select('role')
+    .select('role, status')
     .eq('id', user.id)
     .single()
 
@@ -51,7 +48,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data: targetProfile } = await adminClient
     .from('profiles')
-    .select('role')
+    .select('role, status')
     .eq('id', userId)
     .single()
 
@@ -64,15 +61,16 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (action === 'approve') {
-    await adminClient.from('profiles').update({ approved: true }).eq('id', userId)
+    await adminClient.from('profiles').update({ status: 'approved' }).eq('id', userId)
   } else if (action === 'reject') {
-    await adminClient.from('profiles').update({ approved: false }).eq('id', userId)
+    await adminClient.from('profiles').update({ status: 'rejected' }).eq('id', userId)
   } else if (action === 'change_role') {
     if (!role) return NextResponse.json({ error: 'Rol belirtilmedi' }, { status: 400 })
     if (role === 'super_admin') {
       return NextResponse.json({ error: 'Süper admin rolü atanamaz' }, { status: 403 })
     }
-    if (callerProfile.role === 'admin' && role === 'admin' && callerProfile.role !== 'super_admin') {
+    if (callerProfile.role === 'admin' && role === 'admin') {
+      return NextResponse.json({ error: 'Admin rolü atayamazsınız' }, { status: 403 })
     }
     await adminClient.from('profiles').update({ role }).eq('id', userId)
   } else {

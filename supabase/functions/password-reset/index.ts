@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const MAX_ATTEMPTS = 5;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -14,7 +15,7 @@ const EMAIL_RE = /^[a-zA-Z0-9.!#$&*+/=?^_{|}~-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 function strictEmail(raw: string): string | null {
   const e = raw.trim().toLowerCase();
-  if (!EMAIL_RE.test(e) || e.includes('%') || e.includes('_') || e.length > 254) return null;
+  if (!EMAIL_RE.test(e) || e.includes('%') || e.length > 254) return null;
   return e;
 }
 
@@ -48,10 +49,10 @@ Deno.serve(async (req: Request) => {
       }
 
       const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
       await adminClient.from('password_reset_tokens').upsert(
-        { email, code: resetCode, expires_at: expiresAt },
+        { email, code: resetCode, expires_at: expiresAt, attempts: 0 },
         { onConflict: 'email' },
       );
 
@@ -73,7 +74,7 @@ Deno.serve(async (req: Request) => {
     </div>
   </div>
   <h2 style="color:#1A1D2E;font-size:22px;font-weight:700;margin:0 0 8px;">Şifre Sıfırlama</h2>
-  <p style="color:#666;font-size:14px;margin:0 0 28px;">Şifrenizi sıfırlamak için aşağıdaki 6 haneli kodu uygulamaya girin. Kod <strong>15 dakika</strong> geçerlidir.</p>
+  <p style="color:#666;font-size:14px;margin:0 0 28px;">Şifrenizi sıfırlamak için aşağıdaki 6 haneli kodu uygulamaya girin. Kod <strong>10 dakika</strong> geçerlidir. <strong>En fazla 5 deneme hakkınız vardır.</strong></p>
   <div style="background:#F6F8FB;border-radius:14px;padding:24px;text-align:center;border:2px solid #E8ECF0;margin-bottom:28px;">
     <span style="font-size:42px;font-weight:800;letter-spacing:10px;color:#1A1D2E;font-family:monospace;">${resetCode}</span>
   </div>
@@ -105,13 +106,38 @@ Deno.serve(async (req: Request) => {
       }
 
       const token = tokens[0];
-      if (token.code !== String(code)) {
-        return new Response(JSON.stringify({ ok: false, error: 'Hatalı kod. Lütfen tekrar deneyin.' }), {
+
+      if (new Date(token.expires_at) < new Date()) {
+        await adminClient.from('password_reset_tokens').delete().eq('email', email);
+        return new Response(JSON.stringify({ ok: false, error: 'Kodun süresi dolmuş. Lütfen yeni kod isteyin.' }), {
           status: 400, headers: resHeaders,
         });
       }
-      if (new Date(token.expires_at) < new Date()) {
-        return new Response(JSON.stringify({ ok: false, error: 'Kodun süresi dolmuş. Lütfen yeni kod isteyin.' }), {
+
+      const currentAttempts = token.attempts ?? 0;
+      if (currentAttempts >= MAX_ATTEMPTS) {
+        await adminClient.from('password_reset_tokens').delete().eq('email', email);
+        return new Response(JSON.stringify({ ok: false, error: 'Çok fazla hatalı deneme. Lütfen yeni kod isteyin.' }), {
+          status: 429, headers: resHeaders,
+        });
+      }
+
+      if (token.code !== String(code)) {
+        const newAttempts = currentAttempts + 1;
+        const remaining = MAX_ATTEMPTS - newAttempts;
+
+        if (remaining <= 0) {
+          await adminClient.from('password_reset_tokens').delete().eq('email', email);
+          return new Response(JSON.stringify({ ok: false, error: 'Kod geçersiz. Deneme hakkınız doldu, yeni kod isteyin.' }), {
+            status: 429, headers: resHeaders,
+          });
+        }
+
+        await adminClient.from('password_reset_tokens')
+          .update({ attempts: newAttempts })
+          .eq('email', email);
+
+        return new Response(JSON.stringify({ ok: false, error: `Hatalı kod. ${remaining} deneme hakkınız kaldı.` }), {
           status: 400, headers: resHeaders,
         });
       }
