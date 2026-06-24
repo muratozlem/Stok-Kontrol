@@ -19,6 +19,7 @@ import {
   Info,
   ShieldCheck,
   X,
+  MapPin,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
@@ -33,8 +34,10 @@ const roleLabel: Record<string, string> = {
 };
 
 export default function SettingsPage() {
-  const { products, warehouses, transactions } = useData();
+  const { products, warehouses, transactions, locations } = useData();
   const { currentUser, canManageUsers, logout } = useAuth();
+
+  const locationName = locations.find(l => l.id === currentUser?.locationId)?.name ?? null;
   const [confirmLogout, setConfirmLogout] = useState(false);
 
   const handleLogout = useCallback(() => {
@@ -74,9 +77,17 @@ export default function SettingsPage() {
           <Text style={styles.profileName} numberOfLines={1}>
             {currentUser?.email ?? 'Kullanıcı'}
           </Text>
-          <View style={styles.profileBadge}>
-            <Shield size={11} color={Colors.white} strokeWidth={2.4} />
-            <Text style={styles.profileRole}>{displayRole}</Text>
+          <View style={styles.profileBadgesRow}>
+            <View style={styles.profileBadge}>
+              <Shield size={11} color={Colors.white} strokeWidth={2.4} />
+              <Text style={styles.profileRole}>{displayRole}</Text>
+            </View>
+            {locationName && (
+              <View style={styles.profileBadge}>
+                <MapPin size={11} color={Colors.white} strokeWidth={2.4} />
+                <Text style={styles.profileRole}>{locationName}</Text>
+              </View>
+            )}
           </View>
         </View>
       </LinearGradient>
@@ -223,6 +234,9 @@ const styles = StyleSheet.create({
   avatarText: { fontSize: 24, fontWeight: '800' as const, color: Colors.white, letterSpacing: -0.5 },
   profileInfo: { flex: 1, gap: 6 },
   profileName: { fontSize: 17, fontWeight: '800' as const, color: Colors.white, letterSpacing: -0.3 },
+  profileBadgesRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 6,
+  },
   profileBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start' as const,
     backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
