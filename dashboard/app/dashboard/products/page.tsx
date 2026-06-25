@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { Package, AlertTriangle, TrendingDown } from 'lucide-react'
 

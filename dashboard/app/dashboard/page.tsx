@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
 import StatCard from '@/components/StatCard'
 import LocationBarChart from '@/components/charts/LocationBarChart'

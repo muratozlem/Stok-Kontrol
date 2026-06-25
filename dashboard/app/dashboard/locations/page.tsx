@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { MapPin, Warehouse, Users, Building2, Package, Hash, AlertTriangle } from 'lucide-react'
 

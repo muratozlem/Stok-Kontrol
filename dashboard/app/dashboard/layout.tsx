@@ -1,13 +1,16 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
 import Sidebar from '@/components/Sidebar'
+
+const WATCHED_TABLES = ['inventory', 'transactions', 'products', 'locations', 'warehouses']
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [ready, setReady] = useState(false)
   const [userData, setUserData] = useState<{ email: string; role: string } | null>(null)
+  const channelRef = useRef<ReturnType<ReturnType<typeof createClient>['channel']> | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
@@ -29,7 +32,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
       setUserData({ email: user.email ?? '', role: profile.role })
       setReady(true)
+
+      const channel = supabase.channel('dashboard-realtime')
+      WATCHED_TABLES.forEach((table) => {
+        channel.on(
+          'postgres_changes' as any,
+          { event: '*', schema: 'public', table },
+          () => { router.refresh() },
+        )
+      })
+      channel.subscribe()
+      channelRef.current = channel
     })
+
+    return () => {
+      if (channelRef.current) {
+        createClient().removeChannel(channelRef.current)
+      }
+    }
   }, [router])
 
   if (!ready) {
