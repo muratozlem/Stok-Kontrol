@@ -1,7 +1,10 @@
 {
-  "/dashboard/warehouses/page": "app/dashboard/warehouses/page.js",
-  "/dashboard/users/page": "app/dashboard/users/page.js",
-  "/page": "app/page.js",
   "/login/page": "app/login/page.js",
-  "/dashboard/page": "app/dashboard/page.js"
+  "/page": "app/page.js",
+  "/dashboard/users/page": "app/dashboard/users/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/dashboard/locations/page": "app/dashboard/locations/page.js",
+  "/dashboard/products/page": "app/dashboard/products/page.js",
+  "/dashboard/reports/page": "app/dashboard/reports/page.js",
+  "/dashboard/warehouses/page": "app/dashboard/warehouses/page.js"
 }
