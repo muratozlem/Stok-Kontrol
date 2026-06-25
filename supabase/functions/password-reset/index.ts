@@ -4,6 +4,7 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const MAX_ATTEMPTS = 5;
+const COOLDOWN_SECONDS = 60;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -48,11 +49,29 @@ Deno.serve(async (req: Request) => {
         return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
       }
 
+      const { data: existing } = await adminClient
+        .from('password_reset_tokens')
+        .select('created_at')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existing?.created_at) {
+        const ageSeconds = (Date.now() - new Date(existing.created_at).getTime()) / 1000;
+        if (ageSeconds < COOLDOWN_SECONDS) {
+          const waitSeconds = Math.ceil(COOLDOWN_SECONDS - ageSeconds);
+          return new Response(
+            JSON.stringify({ ok: false, error: `Lütfen ${waitSeconds} saniye bekleyin.` }),
+            { status: 429, headers: resHeaders },
+          );
+        }
+      }
+
       const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const createdAt = new Date().toISOString();
 
       await adminClient.from('password_reset_tokens').upsert(
-        { email, code: resetCode, expires_at: expiresAt, attempts: 0 },
+        { email, code: resetCode, expires_at: expiresAt, attempts: 0, created_at: createdAt },
         { onConflict: 'email' },
       );
 
@@ -160,7 +179,8 @@ Deno.serve(async (req: Request) => {
       );
 
       if (updateError) {
-        return new Response(JSON.stringify({ ok: false, error: 'Şifre güncellenemedi: ' + updateError.message }), {
+        console.error('[password-reset] updateUser:', updateError.message);
+        return new Response(JSON.stringify({ ok: false, error: 'Şifre güncellenemedi' }), {
           status: 500, headers: resHeaders,
         });
       }

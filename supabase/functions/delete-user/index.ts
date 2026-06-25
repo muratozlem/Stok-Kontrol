@@ -62,9 +62,34 @@ Deno.serve(async (req) => {
       })
     }
 
+    const { data: targetProfile } = await adminClient
+      .from('profiles')
+      .select('role')
+      .eq('id', targetUserId)
+      .single()
+
+    if (!targetProfile) {
+      return new Response(JSON.stringify({ error: 'Kullanıcı bulunamadı' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (targetProfile.role === 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Süper admin silinemez' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (callerProfile.role === 'admin' && targetProfile.role === 'admin') {
+      return new Response(JSON.stringify({ error: 'Admin, başka bir admini silemez' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId)
     if (deleteError) {
-      return new Response(JSON.stringify({ error: 'Kullanıcı silinemedi: ' + deleteError.message }), {
+      console.error('[delete-user]', deleteError.message)
+      return new Response(JSON.stringify({ error: 'Kullanıcı silinemedi' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }

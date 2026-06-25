@@ -69,10 +69,10 @@ export async function PATCH(request: NextRequest) {
 
   if (action === 'approve') {
     const { error } = await adminClient.from('profiles').update({ status: 'approved' }).eq('id', userId)
-    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
   } else if (action === 'reject') {
     const { error } = await adminClient.from('profiles').update({ status: 'rejected' }).eq('id', userId)
-    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
   } else if (action === 'change_role') {
     if (!role) return NextResponse.json({ error: 'Rol belirtilmedi' }, { status: 400 })
     if (role === 'super_admin') {
@@ -82,7 +82,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Admin rolü atayamazsınız' }, { status: 403 })
     }
     const { error } = await adminClient.from('profiles').update({ role }).eq('id', userId)
-    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
   } else {
     return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 })
   }
