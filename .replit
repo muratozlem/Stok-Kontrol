@@ -40,9 +40,10 @@ localPort = 5000
 externalPort = 80
 
 [deployment]
-deploymentTarget = "static"
-build = ["bash", "-c", "cd expo && npx expo export --platform web --output-dir dist"]
+deploymentTarget = "autoscale"
+build = ["bash", "-c", "cd dashboard && bun install && bun run build"]
 publicDir = "expo/dist"
+run = ["bash", "-c", "cd dashboard && bun run start"]
 
 [userenv]
 
