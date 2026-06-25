@@ -1,7 +1,7 @@
 {
-  "/page": "app/page.js",
   "/dashboard/locations/page": "app/dashboard/locations/page.js",
-  "/dashboard/warehouses/page": "app/dashboard/warehouses/page.js",
+  "/dashboard/products/page": "app/dashboard/products/page.js",
   "/dashboard/users/page": "app/dashboard/users/page.js",
-  "/dashboard/products/page": "app/dashboard/products/page.js"
+  "/dashboard/page": "app/dashboard/page.js",
+  "/dashboard/warehouses/page": "app/dashboard/warehouses/page.js"
 }

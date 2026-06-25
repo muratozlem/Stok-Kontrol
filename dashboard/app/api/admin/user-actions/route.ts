@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { revalidatePath } from 'next/cache'
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,5 +87,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 })
   }
 
+  revalidatePath('/dashboard/users')
   return NextResponse.json({ success: true })
 }

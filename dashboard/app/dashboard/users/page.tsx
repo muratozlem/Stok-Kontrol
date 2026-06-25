@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
 import UserActionsClient from './UserActionsClient'
 import { Users, CheckCircle, Clock, MapPin } from 'lucide-react'
