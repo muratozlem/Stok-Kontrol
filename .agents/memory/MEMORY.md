@@ -6,3 +6,4 @@
 - [Role System](role-system.md) — 4-tier: super_admin > admin (İdari İşler) > chef (Şef) > staff (Personel); locations table added; update-user-role edge function handles role+location assignments with caller validation.
 - [Supabase CLI unavailable](build-pattern.md) — No Supabase CLI in environment; deploy edge functions via Management API PATCH/POST with jq for JSON encoding; apply SQL via `/database/query` endpoint.
 - [Supabase Edge Deploy](supabase-edge-deploy.md) — PATCH API strips first 4 bytes of body; prepend `/**/`; use `npm:@supabase/supabase-js@2` not `esm.sh` (esm.sh → BOOT_ERROR).
+- [Supabase data deletion](supabase-delete-method.md) — Management API /database/query returns wrong counts under RLS; always use REST API + service role key for deletes and verification.
