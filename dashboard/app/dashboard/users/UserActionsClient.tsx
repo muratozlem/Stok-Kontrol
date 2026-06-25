@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase-browser'
 import { CheckCircle, XCircle, ChevronDown } from 'lucide-react'
 
 interface Props {
@@ -18,11 +19,18 @@ const roles = [
 ]
 
 async function callUserAction(body: object) {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const token = session?.access_token
+  if (!token) throw new Error('Oturum bulunamadı, lütfen yeniden giriş yapın')
+
   const res = await fetch('/api/admin/user-actions', {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
     body: JSON.stringify(body),
-    credentials: 'include',
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -99,7 +107,7 @@ export default function UserActionsClient({ userId, status, currentRole }: Props
           )}
         </div>
       </div>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
     </div>
   )
 }

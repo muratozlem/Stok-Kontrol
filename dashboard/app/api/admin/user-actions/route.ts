@@ -1,19 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
-
-function getCallerSupabase(request: NextRequest) {
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { return request.cookies.getAll() },
-        setAll() {},
-      },
-    }
-  )
-}
 
 const adminClient = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,12 +7,26 @@ const adminClient = createClient(
   { auth: { persistSession: false } }
 )
 
+async function getCallerUser(request: NextRequest) {
+  const auth = request.headers.get('Authorization')
+  if (!auth?.startsWith('Bearer ')) return null
+  const token = auth.slice(7)
+
+  const anonClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  )
+  const { data: { user }, error } = await anonClient.auth.getUser()
+  if (error || !user) return null
+  return user
+}
+
 export async function PATCH(request: NextRequest) {
-  const callerSupabase = getCallerSupabase(request)
-  const { data: { user } } = await callerSupabase.auth.getUser()
+  const user = await getCallerUser(request)
 
   if (!user) {
-    return NextResponse.json({ error: 'Oturum bulunamadı' }, { status: 401 })
+    return NextResponse.json({ error: 'Oturum bulunamadı veya süresi doldu' }, { status: 401 })
   }
 
   const { data: callerProfile } = await adminClient
@@ -39,7 +39,13 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Bu işlem için yetkiniz yok' }, { status: 403 })
   }
 
-  const body = await request.json()
+  let body: any
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Geçersiz istek gövdesi' }, { status: 400 })
+  }
+
   const { action, userId, role } = body
 
   if (!userId || !action) {
@@ -61,9 +67,11 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (action === 'approve') {
-    await adminClient.from('profiles').update({ status: 'approved' }).eq('id', userId)
+    const { error } = await adminClient.from('profiles').update({ status: 'approved' }).eq('id', userId)
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
   } else if (action === 'reject') {
-    await adminClient.from('profiles').update({ status: 'rejected' }).eq('id', userId)
+    const { error } = await adminClient.from('profiles').update({ status: 'rejected' }).eq('id', userId)
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
   } else if (action === 'change_role') {
     if (!role) return NextResponse.json({ error: 'Rol belirtilmedi' }, { status: 400 })
     if (role === 'super_admin') {
@@ -72,7 +80,8 @@ export async function PATCH(request: NextRequest) {
     if (callerProfile.role === 'admin' && role === 'admin') {
       return NextResponse.json({ error: 'Admin rolü atayamazsınız' }, { status: 403 })
     }
-    await adminClient.from('profiles').update({ role }).eq('id', userId)
+    const { error } = await adminClient.from('profiles').update({ role }).eq('id', userId)
+    if (error) return NextResponse.json({ error: 'Güncelleme başarısız: ' + error.message }, { status: 500 })
   } else {
     return NextResponse.json({ error: 'Geçersiz işlem' }, { status: 400 })
   }
