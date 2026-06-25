@@ -13,12 +13,12 @@ async function getStats(supabase: any) {
     supabase.from('inventory').select('quantity'),
     supabase.from('profiles').select('id, status').eq('status', 'pending').neq('role', 'super_admin'),
     supabase.from('locations').select('id'),
-    supabase.from('inventory').select('quantity, products!inner(min_quantity)').lt('quantity', 1),
+    supabase.from('inventory').select('quantity, products!inner(critical_stock_level)'),
   ])
   const totalStock = (inventoryRes.data ?? []).reduce((s: number, r: any) => s + (r.quantity ?? 0), 0)
   const pendingUsers = profilesRes.data?.length ?? 0
   const totalLocations = locationsRes.data?.length ?? 0
-  const criticalCount = criticalRes.data?.length ?? 0
+  const criticalCount = (criticalRes.data ?? []).filter((r: any) => (r.quantity ?? 0) < (r.products?.critical_stock_level ?? 0)).length
   return { totalStock, pendingUsers, totalLocations, criticalCount }
 }
 
@@ -70,20 +70,8 @@ async function getForecastData(supabase: any) {
   return result
 }
 
-async function getStaffData(supabase: any) {
-  const { data } = await supabase
-    .from('transactions')
-    .select('user_id, profiles!inner(username)')
-    .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
-  if (!data?.length) return []
-  const map: Record<string, { name: string; count: number }> = {}
-  for (const t of data) {
-    const id = t.user_id
-    if (!map[id]) map[id] = { name: t.profiles?.username ?? 'Bilinmiyor', count: 0 }
-    map[id].count++
-  }
-  return Object.values(map).map(v => ({ name: v.name, value: v.count }))
-    .sort((a, b) => b.value - a.value).slice(0, 6)
+async function getStaffData(_supabase: any) {
+  return []
 }
 
 async function getDeadStockData(supabase: any) {
@@ -98,7 +86,7 @@ async function getDeadStockData(supabase: any) {
   return inv
     .map((r: any) => {
       const last = lastTxn[r.product_id]
-      const days = last ? Math.floor((now - last.getTime()) / 86400000) : 999
+      const days = last ? Math.floor((now - last.getTime()) / 86400000) : 0
       return { x: days, y: r.quantity ?? 0, z: r.quantity ?? 1, name: r.products?.name ?? '?' }
     })
     .filter((r: any) => r.x >= 30 && r.y > 0)

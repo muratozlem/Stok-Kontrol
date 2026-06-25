@@ -9,7 +9,7 @@ export default async function LocationsPage() {
     supabase.from('locations').select('id, name, city, description, created_at').order('name'),
     supabase.from('warehouses').select('id, location_id'),
     supabase.from('profiles').select('id, location_id').not('location_id', 'is', null),
-    supabase.from('inventory').select('product_id, quantity, warehouses!inner(location_id), products!inner(min_quantity)'),
+    supabase.from('inventory').select('product_id, quantity, warehouses!inner(location_id), products!inner(critical_stock_level)'),
   ])
 
   const locations = locationsRes.data ?? []
@@ -35,7 +35,7 @@ export default async function LocationsPage() {
     productsByLoc[locId].varieties.add(inv.product_id)
     productsByLoc[locId].total += inv.quantity ?? 0
     const qty = inv.quantity ?? 0
-    const minQty = (inv.products as any)?.min_quantity ?? 0
+    const minQty = (inv.products as any)?.critical_stock_level ?? 0
     if (qty <= minQty) productsByLoc[locId].critical.add(inv.product_id)
   }
 

@@ -6,13 +6,13 @@ export default async function ProductsPage() {
   const supabase = createServerSupabase()
   const { data: inventory } = await supabase
     .from('inventory')
-    .select('quantity, products!inner(id, name, sku, min_quantity, category), warehouses!inner(name, locations!inner(name))')
+    .select('quantity, products!inner(id, name, barcode, critical_stock_level, unit), warehouses!inner(name, locations!inner(name))')
     .order('quantity')
 
   const items = inventory ?? []
-  const critical = items.filter(r => (r.quantity ?? 0) <= (r.products?.min_quantity ?? 0) && (r.quantity ?? 0) > 0)
+  const critical = items.filter(r => (r.quantity ?? 0) <= (r.products?.critical_stock_level ?? 0) && (r.quantity ?? 0) > 0)
   const empty = items.filter(r => (r.quantity ?? 0) === 0)
-  const normal = items.filter(r => (r.quantity ?? 0) > (r.products?.min_quantity ?? 0))
+  const normal = items.filter(r => (r.quantity ?? 0) > (r.products?.critical_stock_level ?? 0))
 
   return (
     <div className="p-6 space-y-6">
@@ -52,7 +52,7 @@ export default async function ProductsPage() {
           <tbody className="divide-y divide-white/5">
             {items.map((r, i) => {
               const qty = r.quantity ?? 0
-              const min = r.products?.min_quantity ?? 0
+              const min = r.products?.critical_stock_level ?? 0
               const isEmpty = qty === 0
               const isCritical = !isEmpty && qty <= min
               return (
@@ -63,7 +63,7 @@ export default async function ProductsPage() {
                       <span className="text-slate-200 font-medium">{r.products?.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-500 font-mono text-xs">{r.products?.sku ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-500 font-mono text-xs">{r.products?.barcode ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-400">{r.warehouses?.name}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{r.warehouses?.locations?.name}</td>
                   <td className={`px-4 py-3 text-right font-bold font-mono ${isEmpty ? 'text-red-400' : isCritical ? 'text-amber-400' : 'text-emerald-400'}`}>{qty}</td>
