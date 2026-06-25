@@ -64,10 +64,23 @@ export default function StockTransactionPage() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [quantity]);
 
-  const executeTransaction = useCallback((qty: number) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    addStockTransaction(selectedProduct, selectedWarehouse, qty, txType, note.trim());
-    router.back();
+  const executeTransaction = useCallback(async (qty: number) => {
+    setFormError(null);
+    try {
+      await addStockTransaction(selectedProduct, selectedWarehouse, qty, txType, note.trim());
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+      console.log('[StockTransaction] Error:', msg);
+      if (msg.includes('row-level security')) {
+        setFormError('Yetki hatası: Bu işlemi yapmaya yetkiniz yok.');
+      } else if (msg.includes('fetch') || msg.includes('network')) {
+        setFormError('Bağlantı hatası. İnternet bağlantınızı kontrol edin.');
+      } else {
+        setFormError('İşlem kaydedilemedi: ' + (msg || 'Bilinmeyen hata'));
+      }
+    }
   }, [selectedProduct, selectedWarehouse, txType, note, addStockTransaction]);
 
   const handleSubmit = useCallback(() => {

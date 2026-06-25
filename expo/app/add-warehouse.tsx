@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,6 +29,8 @@ export default function AddWarehousePage() {
     isSuperAdmin ? null : (currentUser?.locationId ?? null)
   );
   const [locationPickerOpen, setLocationPickerOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   if (!isAdmin && !isChef) {
     return (
@@ -46,19 +49,36 @@ export default function AddWarehousePage() {
     );
   }
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!name.trim()) {
+      setSaveError('Depo adı zorunludur.');
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const locationIdToUse = isSuperAdmin ? selectedLocationId : (currentUser?.locationId ?? null);
-    addWarehouse({
-      name: name.trim(),
-      location: location.trim(),
-      description: description.trim(),
-      locationId: locationIdToUse,
-    });
-    router.back();
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      const locationIdToUse = isSuperAdmin ? selectedLocationId : (currentUser?.locationId ?? null);
+      await addWarehouse({
+        name: name.trim(),
+        location: location.trim(),
+        description: description.trim(),
+        locationId: locationIdToUse,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+      console.log('[AddWarehouse] Save error:', msg);
+      if (msg.includes('row-level security')) {
+        setSaveError('Yetki hatası: Depo ekleme yetkiniz yok.');
+      } else if (msg.includes('fetch') || msg.includes('network')) {
+        setSaveError('Bağlantı hatası. İnternet bağlantınızı kontrol edin.');
+      } else {
+        setSaveError('Depo kaydedilemedi: ' + (msg || 'Bilinmeyen hata'));
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }, [name, location, description, addWarehouse, isSuperAdmin, selectedLocationId, currentUser]);
 
   const selectedLocationName = locations.find(l => l.id === selectedLocationId)?.name;
@@ -190,21 +210,33 @@ export default function AddWarehousePage() {
           )}
         </View>
 
+        {!!saveError && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{saveError}</Text>
+          </View>
+        )}
+
         <TouchableOpacity
-          style={[styles.saveButton, !name.trim() && styles.saveButtonDisabled]}
+          style={[styles.saveButton, (!name.trim() || isSaving) && styles.saveButtonDisabled]}
           onPress={handleSave}
           activeOpacity={0.9}
-          disabled={!name.trim()}
+          disabled={!name.trim() || isSaving}
           testID="save-warehouse-btn"
         >
           <LinearGradient
-            colors={name.trim() ? [Colors.gradientStart, Colors.gradientEnd] : ['#ccc', '#bbb']}
+            colors={name.trim() && !isSaving ? [Colors.gradientStart, Colors.gradientEnd] : ['#ccc', '#bbb']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.saveButtonGradient}
           >
-            <Save size={20} color={Colors.white} strokeWidth={2.4} />
-            <Text style={styles.saveButtonText}>Depoyu Kaydet</Text>
+            {isSaving ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <>
+                <Save size={20} color={Colors.white} strokeWidth={2.4} />
+                <Text style={styles.saveButtonText}>Depoyu Kaydet</Text>
+              </>
+            )}
           </LinearGradient>
         </TouchableOpacity>
 
@@ -399,4 +431,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   bottomSpacer: { height: 40 },
+  errorBox: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
 });
