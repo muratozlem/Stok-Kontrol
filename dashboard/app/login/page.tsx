@@ -2,110 +2,105 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
-import { Lock, Mail, BarChart3, AlertCircle } from 'lucide-react'
+import { BarChart3, Mail, Lock, Loader2 } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true)
     setError('')
+    setLoading(true)
+
     const supabase = createClient()
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+
     if (signInError) {
-      setError('E-posta veya şifre hatalı.')
+      setError('E-posta veya şifre hatalı')
       setLoading(false)
       return
     }
-    if (data.user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single()
-      if (!profile || !['super_admin', 'admin'].includes(profile.role)) {
-        await supabase.auth.signOut()
-        setError('Bu panele erişim yetkiniz yok.')
-        setLoading(false)
-        return
-      }
-      router.push('/dashboard')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { setError('Giriş başarısız'); setLoading(false); return }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || !['super_admin', 'admin'].includes(profile.role)) {
+      await supabase.auth.signOut()
+      setError('Bu panele erişim yetkiniz yok')
+      setLoading(false)
+      return
     }
+
+    router.replace('/dashboard')
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-sky-900/20 via-slate-950 to-emerald-900/10" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-sky-500/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+      <div className="glass p-8 w-full max-w-sm space-y-6">
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mx-auto">
+            <BarChart3 className="w-7 h-7 text-sky-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white">Stok Kontrol</h1>
+          <p className="text-sm text-slate-500">Yönetim Paneli</p>
+        </div>
 
-      <div className="relative w-full max-w-md px-6">
-        <div className="glass p-8 space-y-8">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 mb-4">
-              <BarChart3 className="w-8 h-8 text-sky-400" />
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">E-Posta</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="admin@sirket.com"
+                required
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-sky-500 transition-colors"
+              />
             </div>
-            <h1 className="text-2xl font-bold text-white">Stok Kontrol</h1>
-            <p className="text-slate-400 text-sm">Yönetim Paneli</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">E-posta</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@sirket.com"
-                  required
-                  className="input-dark pl-10"
-                />
-              </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Şifre</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-sky-500 transition-colors"
+              />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Şifre</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="input-dark pl-10"
-                />
-              </div>
-            </div>
+          {error && (
+            <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+          )}
 
-            {error && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                {error}
-              </div>
-            )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-sky-500 hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold text-sm rounded-xl py-2.5 transition-colors flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
+          </button>
+        </form>
 
-            <button type="submit" disabled={loading} className="btn-primary">
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Giriş yapılıyor...
-                </span>
-              ) : 'Giriş Yap'}
-            </button>
-          </form>
-
-          <p className="text-center text-xs text-slate-600">
-            Sadece Süper Admin ve Admin rolüne sahip kullanıcılar giriş yapabilir.
-          </p>
-        </div>
+        <p className="text-center text-xs text-slate-600">Sadece Süper Admin ve Admin girişi yapabilir</p>
       </div>
     </div>
   )

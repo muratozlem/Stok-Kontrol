@@ -1,53 +1,73 @@
 export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
-import { Warehouse, MapPin } from 'lucide-react'
+import { Warehouse, MapPin, Package } from 'lucide-react'
 
 export default async function WarehousesPage() {
   const supabase = createServerSupabase()
-  const [warehousesRes, invRes] = await Promise.all([
-    supabase.from('warehouses').select('id, name, locations!inner(name)').order('name'),
+
+  const [whRes, locRes, invRes] = await Promise.all([
+    supabase.from('warehouses').select('*').order('name'),
+    supabase.from('locations').select('id, name'),
     supabase.from('inventory').select('warehouse_id, quantity'),
   ])
-  const warehouses = warehousesRes.data ?? []
-  const inv = invRes.data ?? []
-  const stockByWarehouse: Record<string, number> = {}
-  for (const r of inv) {
-    stockByWarehouse[r.warehouse_id] = (stockByWarehouse[r.warehouse_id] ?? 0) + (r.quantity ?? 0)
+
+  const warehouses = whRes.data ?? []
+  const locations = locRes.data ?? []
+  const inventory = invRes.data ?? []
+
+  const locMap: Record<string, string> = {}
+  for (const l of locations) locMap[l.id] = l.name
+
+  const stockByWh: Record<string, number> = {}
+  for (const inv of inventory) {
+    if (inv.warehouse_id) stockByWh[inv.warehouse_id] = (stockByWh[inv.warehouse_id] ?? 0) + (inv.quantity ?? 0)
   }
 
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Depolar</h1>
-        <p className="text-slate-500 text-sm mt-1">{warehouses.length} depo</p>
+        <p className="text-sm text-slate-500 mt-1">{warehouses.length} depo</p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {warehouses.map(w => (
-          <div key={w.id} className="glass p-5 space-y-3 hover:bg-white/10 transition-colors">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center flex-shrink-0">
-                <Warehouse className="w-5 h-5 text-sky-400" />
+
+      {warehouses.length === 0 ? (
+        <div className="glass p-16 text-center">
+          <Warehouse className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500">Henüz depo eklenmemiş</p>
+          <p className="text-xs text-slate-600 mt-1">Mobil uygulamadan depo ekleyebilirsiniz</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {warehouses.map((wh: any) => (
+            <div key={wh.id} className="glass p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <Warehouse className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-200">{wh.name}</p>
+                  {wh.location_id && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3 text-slate-500" />
+                      <p className="text-xs text-slate-500">{locMap[wh.location_id] ?? 'Bilinmiyor'}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="font-semibold text-slate-200 truncate">{w.name}</p>
-                <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                  <MapPin className="w-3 h-3" /> {w.locations?.name}
-                </p>
+
+              <div className="flex items-center gap-2 pt-3 border-t border-white/5">
+                <Package className="w-4 h-4 text-amber-400" />
+                <span className="text-sm text-slate-400">Toplam Stok:</span>
+                <span className="text-sm font-bold text-amber-400">{(stockByWh[wh.id] ?? 0).toLocaleString('tr-TR')}</span>
               </div>
+
+              {wh.description && (
+                <p className="text-xs text-slate-500">{wh.description}</p>
+              )}
             </div>
-            <div className="flex items-center justify-between pt-2 border-t border-white/5">
-              <span className="text-xs text-slate-500">Toplam stok</span>
-              <span className="text-lg font-bold text-sky-400">{(stockByWarehouse[w.id] ?? 0).toLocaleString('tr-TR')}</span>
-            </div>
-          </div>
-        ))}
-        {warehouses.length === 0 && (
-          <div className="col-span-3 text-center py-16 text-slate-500">
-            <Warehouse className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p>Depo bulunamadı</p>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
