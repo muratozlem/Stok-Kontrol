@@ -5,6 +5,8 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const MAX_ATTEMPTS = 5;
 const COOLDOWN_SECONDS = 60;
+const IP_WINDOW_MINUTES = 10;
+const IP_MAX_REQUESTS = 5;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,6 +20,14 @@ function strictEmail(raw: string): string | null {
   const e = raw.trim().toLowerCase();
   if (!EMAIL_RE.test(e) || e.includes('%') || e.length > 254) return null;
   return e;
+}
+
+function getClientIp(req: Request): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown'
+  );
 }
 
 async function hashCode(code: string): Promise<string> {
@@ -47,6 +57,30 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (action === 'request') {
+      const ip = getClientIp(req);
+      const windowStart = new Date(Date.now() - IP_WINDOW_MINUTES * 60 * 1000).toISOString();
+      const { count: ipCount } = await adminClient
+        .from('password_reset_ip_log')
+        .select('*', { count: 'exact', head: true })
+        .eq('ip', ip)
+        .gte('requested_at', windowStart);
+
+      if ((ipCount ?? 0) >= IP_MAX_REQUESTS) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'Çok fazla istek. Lütfen 10 dakika sonra tekrar deneyin.' }),
+          { status: 429, headers: resHeaders },
+        );
+      }
+
+      await adminClient
+        .from('password_reset_ip_log')
+        .insert({ ip, requested_at: new Date().toISOString() });
+
+      await adminClient
+        .from('password_reset_ip_log')
+        .delete()
+        .lt('requested_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+
       const { data: profiles } = await adminClient
         .from('profiles')
         .select('id')

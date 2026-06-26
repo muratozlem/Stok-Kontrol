@@ -22,9 +22,6 @@ const GREEN  = '#7DC242';
 const YELLOW = '#F5C225';
 const ORANGE = '#F07D28';
 
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -59,12 +56,21 @@ export default function ForgotPasswordScreen() {
     try {
       if (!isSupabaseConfigured) throw new Error('Sistem yapılandırması eksik');
 
-      const { error: insertError } = await supabase
-        .from('password_reset_requests')
-        .insert({ id: generateId(), email: cleanEmail, status: 'pending' });
+      const { data, error: fnError } = await supabase.functions.invoke(
+        'request-password-reset',
+        { body: { email: cleanEmail } },
+      );
 
-      if (insertError && !insertError.message.includes('duplicate')) {
-        throw new Error(insertError.message);
+      if (fnError) {
+        const status = (fnError as { status?: number }).status;
+        if (status === 429) {
+          throw new Error('Çok fazla istek. Lütfen 10 dakika sonra tekrar deneyin.');
+        }
+        throw new Error('Bir hata oluştu. Tekrar deneyin.');
+      }
+
+      if (data && data.ok === false && data.error?.includes('fazla istek')) {
+        throw new Error(data.error);
       }
 
       setSubmitted(true);

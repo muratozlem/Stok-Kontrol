@@ -191,30 +191,18 @@ END $$;
 
 -- ============================================================
 -- password_reset_requests politikaları
--- Anon INSERT: yalnızca approved profili olan e-postalar için.
+-- Anon INSERT kaldırıldı: hesap sıralaması açığını önlemek için
+-- tüm reset talepleri artık service-role edge function üzerinden geçer.
 -- Admin onaylayıp reddedebilir.
 -- ============================================================
-
--- Güvenlik fonksiyonu: e-postanın approved profile sahip olup olmadığını kontrol eder.
-CREATE OR REPLACE FUNCTION public.can_request_password_reset(request_email TEXT)
-RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE email = request_email AND status = 'approved'
-  );
-$$;
 
 -- Her e-posta için en fazla bir adet pending talep: spam engeli
 CREATE UNIQUE INDEX IF NOT EXISTS password_reset_requests_pending_email_unique
   ON public.password_reset_requests (email)
   WHERE status = 'pending';
 
--- Mevcut anon insert politikasını kaldır ve güvenli sürümüyle yeniden oluştur.
--- DROP + CREATE kullanarak mevcut WITH CHECK (true) politikasının üzerine yazılır.
+-- Anon insert politikasını kaldır — edge function servis rolüyle ekler
 DROP POLICY IF EXISTS reset_req_anon_insert ON public.password_reset_requests;
-CREATE POLICY "reset_req_anon_insert"
-  ON password_reset_requests FOR INSERT TO anon
-  WITH CHECK (can_request_password_reset(email));
 
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_admin_all') THEN
@@ -222,3 +210,17 @@ DO $$ BEGIN
       ON password_reset_requests FOR ALL TO authenticated USING (is_admin());
   END IF;
 END $$;
+
+-- ============================================================
+-- password_reset_ip_log: IP bazlı istek hız sınırı takibi
+-- ============================================================
+CREATE TABLE IF NOT EXISTS password_reset_ip_log (
+  id BIGSERIAL PRIMARY KEY,
+  ip TEXT NOT NULL,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prip_log_ip_time
+  ON password_reset_ip_log (ip, requested_at);
+
+ALTER TABLE public.password_reset_ip_log ENABLE ROW LEVEL SECURITY;
