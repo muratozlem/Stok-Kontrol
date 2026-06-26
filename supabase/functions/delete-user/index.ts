@@ -53,12 +53,19 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile } = await adminClient
       .from('profiles')
-      .select('role')
+      .select('role, status, location_id')
       .eq('id', user.id)
       .single()
 
     if (!callerProfile || !['super_admin', 'admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Yetkisiz erişim' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Caller must be approved — pending/rejected admins cannot delete users
+    if (callerProfile.status !== 'approved') {
+      return new Response(JSON.stringify({ error: 'Hesabınız onaylı değil' }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }
@@ -79,7 +86,7 @@ Deno.serve(async (req) => {
 
     const { data: targetProfile } = await adminClient
       .from('profiles')
-      .select('role')
+      .select('role, location_id')
       .eq('id', targetUserId)
       .single()
 
@@ -99,6 +106,20 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Admin, başka bir admini silemez' }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
       })
+    }
+
+    // Regular admin can only delete users within their own location
+    if (callerProfile.role === 'admin') {
+      if (!callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Lokasyonunuz tanımlı değil' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      if (targetProfile.location_id !== callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Yalnızca kendi lokasyonunuzdaki kullanıcıları silebilirsiniz' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId)

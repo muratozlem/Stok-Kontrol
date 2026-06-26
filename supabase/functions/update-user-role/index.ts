@@ -90,8 +90,15 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Admin, super_admin rolü atayamaz
-    if (callerRole === 'admin' && newRole === 'super_admin') {
+    // Caller must be approved — pending/rejected accounts cannot use this endpoint
+    if (callerProfile.status !== 'approved') {
+      return new Response(JSON.stringify({ error: 'Hesabınız onaylı değil' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Nobody below super_admin may assign super_admin role
+    if (callerRole !== 'super_admin' && newRole === 'super_admin') {
       return new Response(JSON.stringify({ error: 'Bu işlem için yetkiniz yok' }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
       })
@@ -109,34 +116,70 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Only super_admin may modify super_admin accounts
+    if (targetProfile.role === 'super_admin' && callerRole !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Süper admin hesabı değiştirilemez' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
     if (callerRole === 'admin') {
+      // Admin may only assign chef or staff roles
       if (!['chef', 'staff'].includes(newRole)) {
         return new Response(JSON.stringify({ error: 'Admin yalnızca şef veya personel atayabilir' }), {
           status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
         })
       }
+      // Admin may not modify other admin accounts
+      if (targetProfile.role === 'admin') {
+        return new Response(JSON.stringify({ error: 'Admin, başka bir admini değiştiremez' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      // Admin must have a location assigned
       if (!callerLocationId) {
         return new Response(JSON.stringify({ error: 'Lokasyonunuz tanımlı değil' }), {
           status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
         })
       }
-      // Hedef kullanıcının lokasyonu admin'inkinden farklıysa reddet
-      const effectiveLoc = newLocationId || targetProfile.location_id
-      if (effectiveLoc && effectiveLoc !== callerLocationId) {
+      // Scope check uses the target's CURRENT location_id only.
+      // A null target location (pending/unassigned user) is acceptable so
+      // the admin can approve and assign them to their own location.
+      // A target already assigned to a DIFFERENT location is always rejected.
+      if (targetProfile.location_id !== null && targetProfile.location_id !== callerLocationId) {
         return new Response(JSON.stringify({ error: 'Yalnızca kendi lokasyonunuzdaki kullanıcıları yönetebilirsiniz' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      // Admin may not reassign a user to a different location — only super_admin can do that
+      if (newLocationId !== undefined && newLocationId !== null && newLocationId !== callerLocationId) {
+        return new Response(JSON.stringify({ error: 'Kullanıcıyı başka bir lokasyona taşıyamazsınız' }), {
           status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
         })
       }
     }
 
     if (callerRole === 'chef') {
+      // Chef may only assign staff role
       if (newRole !== 'staff') {
         return new Response(JSON.stringify({ error: 'Şef yalnızca personel rolü atayabilir' }), {
           status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
         })
       }
-      const targetLoc = newLocationId || targetProfile.location_id
-      if (targetLoc && callerLocationId && targetLoc !== callerLocationId) {
+      // Chef may only modify users who are currently staff (cannot demote admin/chef/super_admin)
+      if (targetProfile.role !== 'staff') {
+        return new Response(JSON.stringify({ error: 'Şef yalnızca personel hesaplarını yönetebilir' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      // Chef must have a location assigned — null-location chefs cannot manage anyone
+      if (!callerLocationId) {
+        return new Response(JSON.stringify({ error: 'Lokasyonunuz tanımlı değil' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      // Scope check uses the target's CURRENT location_id; newLocationId is ignored for chefs
+      if (targetProfile.location_id !== callerLocationId) {
         return new Response(JSON.stringify({ error: 'Yalnızca kendi lokasyonunuzdaki kullanıcıları yönetebilirsiniz' }), {
           status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
         })
@@ -145,14 +188,24 @@ Deno.serve(async (req) => {
 
     const updateData: Record<string, unknown> = { role: newRole }
 
-    if (callerRole === 'admin' && callerLocationId) {
-      const resolvedLoc = newLocationId !== undefined ? (newLocationId || null) : (targetProfile.location_id || callerLocationId)
-      updateData.location_id = resolvedLoc ?? callerLocationId
-    } else if (newLocationId !== undefined) {
-      updateData.location_id = newLocationId || null
+    if (callerRole === 'super_admin') {
+      // super_admin can freely reassign location
+      if (newLocationId !== undefined) {
+        updateData.location_id = newLocationId || null
+      }
+    } else if (callerRole === 'admin' && callerLocationId) {
+      // Admin always pins the user to their own location
+      updateData.location_id = callerLocationId
     }
+    // Chef does not change location_id
 
+    // Only super_admin may change account status
     if (newStatus) {
+      if (callerRole !== 'super_admin') {
+        return new Response(JSON.stringify({ error: 'Hesap durumu yalnızca süper admin tarafından değiştirilebilir' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
       const validStatuses: Status[] = ['pending', 'approved', 'rejected']
       if (validStatuses.includes(newStatus)) updateData.status = newStatus
     }

@@ -53,12 +53,19 @@ Deno.serve(async (req) => {
 
     const { data: callerProfile } = await adminClient
       .from('profiles')
-      .select('role')
+      .select('role, status, location_id')
       .eq('id', user.id)
       .single()
 
     if (!callerProfile || !['super_admin', 'admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Yetkisiz erişim' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Caller must be approved — pending/rejected admins cannot reset passwords
+    if (callerProfile.status !== 'approved') {
+      return new Response(JSON.stringify({ error: 'Hesabınız onaylı değil' }), {
         status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
       })
     }
@@ -71,6 +78,7 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Fetch the reset request
     const { data: resetRequest } = await adminClient
       .from('password_reset_requests')
       .select('email')
@@ -83,9 +91,10 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Fetch target profile to enforce role and location boundaries
     const { data: targetProfile } = await adminClient
       .from('profiles')
-      .select('id')
+      .select('id, role, location_id')
       .eq('id', targetUserId)
       .eq('email', resetRequest.email)
       .single()
@@ -94,6 +103,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Hedef kullanıcı bulunamadı' }), {
         status: 404, headers: { ...cors, 'Content-Type': 'application/json' },
       })
+    }
+
+    // Only super_admin can reset another super_admin's password
+    if (targetProfile.role === 'super_admin' && callerProfile.role !== 'super_admin') {
+      return new Response(JSON.stringify({ error: 'Süper admin şifresi sıfırlanamaz' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Regular admin can only reset passwords for users in their own location
+    if (callerProfile.role === 'admin') {
+      if (!callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Lokasyonunuz tanımlı değil' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
+      if (targetProfile.location_id !== callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Yalnızca kendi lokasyonunuzdaki kullanıcıların şifrelerini sıfırlayabilirsiniz' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
     const { error: updateError } = await adminClient.auth.admin.updateUserById(
