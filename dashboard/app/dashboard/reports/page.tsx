@@ -5,15 +5,23 @@ import ReportsClient from './ReportsClient'
 export default async function ReportsPage() {
   const supabase = createServerSupabase()
 
-  const { data: txns } = await supabase
-    .from('transactions')
-    .select('id, type, quantity, note, created_at, products!inner(name), warehouses!inner(name, locations!inner(name))')
-    .order('created_at', { ascending: false })
-    .limit(100)
+  const [{ data: txns }, { data: locs }, { data: whs }, { data: prods }] = await Promise.all([
+    supabase
+      .from('transactions')
+      .select('id, type, quantity, note, created_at, products!inner(name), warehouses!inner(name, locations!inner(name))')
+      .order('created_at', { ascending: false })
+      .limit(500),
+    supabase.from('locations').select('id, name').order('name'),
+    supabase.from('warehouses').select('id, name, location_id').order('name'),
+    supabase.from('products').select('id, name').order('name'),
+  ])
 
-  const transactions = (txns ?? []) as any[]
-  const totalIn = transactions.filter(t => t.type === 'IN').reduce((s: number, t: any) => s + (t.quantity ?? 0), 0)
-  const totalOut = transactions.filter(t => t.type === 'OUT').reduce((s: number, t: any) => s + (t.quantity ?? 0), 0)
-
-  return <ReportsClient transactions={transactions} totalIn={totalIn} totalOut={totalOut} />
+  return (
+    <ReportsClient
+      transactions={(txns ?? []) as any[]}
+      locations={locs ?? []}
+      warehouses={whs ?? []}
+      products={prods ?? []}
+    />
+  )
 }
