@@ -127,34 +127,55 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
   async function exportExcel() {
     setExporting('excel')
     try {
-      const XLSX = await import('xlsx')
-      const rows = filtered.map(t => ({
-        'Tarih': new Date(t.created_at).toLocaleString('tr-TR'),
-        'Tür': t.type === 'IN' ? 'Giriş' : 'Çıkış',
-        'Ürün': t.products?.name ?? '',
-        'Depo': t.warehouses?.name ?? '',
-        'Lokasyon': t.warehouses?.locations?.name ?? '',
-        'Miktar': t.type === 'IN' ? t.quantity : -t.quantity,
-        'Not': t.note ?? '',
-      }))
+      const ExcelJS = await import('exceljs')
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'Stok Kontrol'
+      wb.created = new Date()
 
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(rows)
-      ws['!cols'] = [{ wch: 20 }, { wch: 8 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 30 }]
-      XLSX.utils.book_append_sheet(wb, ws, 'İşlemler')
+      const ws = wb.addWorksheet('İşlemler')
+      ws.columns = [
+        { header: 'Tarih', key: 'tarih', width: 22 },
+        { header: 'Tür', key: 'tur', width: 10 },
+        { header: 'Ürün', key: 'urun', width: 24 },
+        { header: 'Depo', key: 'depo', width: 20 },
+        { header: 'Lokasyon', key: 'lokasyon', width: 20 },
+        { header: 'Miktar', key: 'miktar', width: 12 },
+        { header: 'Not', key: 'not', width: 32 },
+      ]
+      ws.getRow(1).font = { bold: true }
 
-      const summary = XLSX.utils.aoa_to_sheet([
-        ['Özet'],
+      filtered.forEach(t => {
+        ws.addRow({
+          tarih: new Date(t.created_at).toLocaleString('tr-TR'),
+          tur: t.type === 'IN' ? 'Giriş' : 'Çıkış',
+          urun: t.products?.name ?? '',
+          depo: t.warehouses?.name ?? '',
+          lokasyon: t.warehouses?.locations?.name ?? '',
+          miktar: t.type === 'IN' ? t.quantity : -t.quantity,
+          not: t.note ?? '',
+        })
+      })
+
+      const ws2 = wb.addWorksheet('Özet')
+      ws2.addRows([
         ['Toplam Giriş', filteredIn],
         ['Toplam Çıkış', filteredOut],
         ['Net', net],
         ['Filtreler', filterSummaryText()],
         ['Oluşturulma', new Date().toLocaleString('tr-TR')],
       ])
-      XLSX.utils.book_append_sheet(wb, summary, 'Özet')
 
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
       const tarih = new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')
-      XLSX.writeFile(wb, `stok-rapor-${tarih}.xlsx`)
+      a.href = url
+      a.download = `stok-rapor-${tarih}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
     } finally {
       setExporting(null)
     }
