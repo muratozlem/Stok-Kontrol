@@ -21,6 +21,21 @@ function getCorsHeaders(req: Request) {
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MINUTES = 60;
 
+function timingSafeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) {
+    // Still iterate to avoid timing leak on length difference alone
+    let dummy = 0;
+    for (let i = 0; i < ab.length; i++) dummy |= ab[i] ^ (bb[i % bb.length] ?? 0);
+    return false;
+  }
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
   const cors = getCorsHeaders(req);
 
@@ -34,7 +49,8 @@ Deno.serve(async (req) => {
       req.headers.get('cf-connecting-ip') ??
       'unknown';
 
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const { email, password, bootstrap_token } = body;
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'E-posta ve şifre gerekli' }), {
@@ -64,11 +80,19 @@ Deno.serve(async (req) => {
     // IP tabanlı rate limiting: son 1 saatte bu IP'den max 5 kayıt
     if (clientIP !== 'unknown') {
       const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
-      const { count: recentCount } = await adminClient
+      const { count: recentCount, error: rateErr } = await adminClient
         .from('profiles')
         .select('id', { count: 'exact', head: true })
         .eq('registered_from_ip', clientIP)
         .gte('created_at', windowStart);
+
+      if (rateErr) {
+        // Fail closed: if the rate-limit query fails (e.g. schema drift), block the request
+        console.error('[register-user] rate-limit query error:', rateErr.message);
+        return new Response(JSON.stringify({ error: 'Kayıt şu anda yapılamıyor. Lütfen daha sonra tekrar deneyin.' }), {
+          status: 503, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
 
       if ((recentCount ?? 0) >= RATE_LIMIT_MAX) {
         return new Response(JSON.stringify({ error: 'Çok fazla kayıt denemesi. Lütfen daha sonra tekrar deneyin.' }), {
@@ -82,6 +106,27 @@ Deno.serve(async (req) => {
       .select('id', { count: 'exact', head: true });
 
     const isFirst = !count || count === 0;
+
+    if (isFirst) {
+      // Bootstrap protection: first super_admin requires a server-side secret
+      const bootstrapSecret = Deno.env.get('BOOTSTRAP_SECRET');
+      if (!bootstrapSecret) {
+        return new Response(JSON.stringify({
+          error: 'Sistem kurulumu henüz tamamlanmamış. Lütfen yöneticiyle iletişime geçin.',
+        }), {
+          status: 503, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!bootstrap_token || !timingSafeEqual(String(bootstrap_token), bootstrapSecret)) {
+        return new Response(JSON.stringify({
+          error: 'Kurulum tokeni hatalı veya eksik.',
+          bootstrap_required: true,
+        }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const role = isFirst ? 'super_admin' : 'staff';
     const status = isFirst ? 'approved' : 'pending';
 
@@ -107,13 +152,18 @@ Deno.serve(async (req) => {
     const userId = authData.user.id;
     const username = cleanEmail.split('@')[0] ?? cleanEmail;
 
-    const { error: profileError } = await adminClient.from('profiles').insert({
+    const profileRow: Record<string, unknown> = {
       id: userId,
       email: cleanEmail,
       username,
       role,
       status,
-    });
+    };
+    if (clientIP !== 'unknown') {
+      profileRow.registered_from_ip = clientIP;
+    }
+
+    const { error: profileError } = await adminClient.from('profiles').insert(profileRow);
 
     if (profileError) {
       await adminClient.auth.admin.deleteUser(userId);

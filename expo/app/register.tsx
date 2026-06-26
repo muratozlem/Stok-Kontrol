@@ -13,7 +13,7 @@ import {
   Image,
 } from 'react-native';
 import { router, Stack } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
 
@@ -28,6 +28,8 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [bootstrapToken, setBootstrapToken] = useState<string>('');
+  const [showBootstrapField, setShowBootstrapField] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [showConfirm, setShowConfirm] = useState<boolean>(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -65,14 +67,22 @@ export default function RegisterScreen() {
     if (!password) { setLocalError('Şifre boş bırakılamaz'); return; }
     if (password.length < 6) { setLocalError('Şifre en az 6 karakter olmalıdır'); return; }
     if (password !== confirmPassword) { setLocalError('Şifreler eşleşmiyor'); return; }
+    if (showBootstrapField && !bootstrapToken.trim()) {
+      setLocalError('Kurulum tokeni boş bırakılamaz'); return;
+    }
     try {
-      const user = await register(cleanEmail, password);
+      const token = showBootstrapField ? bootstrapToken.trim() : undefined;
+      const user = await register(cleanEmail, password, token);
       if (user.status === 'pending') {
         setPendingMessage('Kayıt talebiniz alındı. Hesabınız admin tarafından onaylandıktan sonra giriş yapabilirsiniz.');
-        setEmail(''); setPassword(''); setConfirmPassword('');
+        setEmail(''); setPassword(''); setConfirmPassword(''); setBootstrapToken('');
       }
     } catch (e: unknown) {
-      setLocalError(e instanceof Error ? e.message : 'Kayıt sırasında bir hata oluştu');
+      const err = e as Error & { bootstrapRequired?: boolean };
+      if (err.bootstrapRequired) {
+        setShowBootstrapField(true);
+      }
+      setLocalError(err.message ?? 'Kayıt sırasında bir hata oluştu');
     }
   };
 
@@ -173,7 +183,7 @@ export default function RegisterScreen() {
                     onChangeText={setConfirmPassword}
                     secureTextEntry={!showConfirm}
                     autoCapitalize="none"
-                    returnKeyType="done"
+                    returnKeyType={showBootstrapField ? 'next' : 'done'}
                     onSubmitEditing={handleRegister}
                     testID="register-confirm"
                   />
@@ -181,6 +191,26 @@ export default function RegisterScreen() {
                     {showConfirm ? <EyeOff size={18} color={Colors.textMuted} /> : <Eye size={18} color={Colors.textMuted} />}
                   </TouchableOpacity>
                 </View>
+
+                {showBootstrapField && (
+                  <View style={styles.inputWrapper}>
+                    <View style={[styles.inputAccent, { backgroundColor: YELLOW }]} />
+                    <KeyRound size={18} color={Colors.textMuted} style={styles.inputIcon} />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Kurulum Tokeni"
+                      placeholderTextColor={Colors.textMuted}
+                      value={bootstrapToken}
+                      onChangeText={setBootstrapToken}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      secureTextEntry
+                      returnKeyType="done"
+                      onSubmitEditing={handleRegister}
+                      testID="register-bootstrap-token"
+                    />
+                  </View>
+                )}
               </View>
 
               <View style={styles.infoNote}>

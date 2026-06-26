@@ -1,5 +1,6 @@
 - [Auth Architecture](auth-architecture.md) — App uses Supabase Auth (signUp/signInWithPassword); custom hashPassword removed; registration via register-user Edge Function.
 - [RLS & Security](rls-security.md) — All anon_all_* policies removed; is_admin()/is_approved_user() SECURITY DEFINER functions gate access; profiles.id is UUID FK to auth.users.
+- [Bootstrap & Rate-limit Security](bootstrap-security.md) — First-user super_admin requires BOOTSTRAP_SECRET env var in Supabase secrets; password-reset RLS gates on can_request_password_reset(); registered_from_ip column enables IP rate limiting.
 - [Edge Functions](edge-functions.md) — register-user, admin-reset-password, delete-user, update-user-role deployed; all use service role key server-side; caller verified via JWT before privileged ops.
 - [Alert.alert blocked in iframe](alert-iframe.md) — window.confirm/Alert.alert is silently blocked inside browser iframes; always use inline confirmation UI state instead.
 - [Build pattern](build-pattern.md) — Expo web build: kill all processes first, then `bunx expo export -p web --output-dir dist` synchronously (needs ~2min); workflow serves `dist` via `bunx serve dist -l 5000 --single`.

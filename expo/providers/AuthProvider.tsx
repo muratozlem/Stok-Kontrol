@@ -73,7 +73,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, [loadProfile]);
 
   const registerMutation = useMutation({
-    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+    mutationFn: async ({ email, password, bootstrapToken }: { email: string; password: string; bootstrapToken?: string }) => {
       if (!isSupabaseConfigured) {
         throw new Error('Supabase bağlantısı yapılandırılmamış');
       }
@@ -90,20 +90,31 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw new Error('Şifre en az 6 karakter olmalı');
       }
 
+      const requestBody: Record<string, string> = { email: cleanEmail, password };
+      if (bootstrapToken) requestBody.bootstrap_token = bootstrapToken;
+
       const { data, error } = await supabase.functions.invoke('register-user', {
-        body: { email: cleanEmail, password },
+        body: requestBody,
       });
 
       if (error) {
         let msg = 'Kayıt oluşturulamadı';
+        let bootstrapRequired = false;
         try {
           const body = await (error as { context?: Response }).context?.json?.();
+          if (body?.bootstrap_required) bootstrapRequired = true;
           if (body?.error) msg = body.error;
           else if (error.message && !error.message.includes('non-2xx')) msg = error.message;
         } catch {}
-        throw new Error(msg);
+        const err = new Error(msg) as Error & { bootstrapRequired?: boolean };
+        err.bootstrapRequired = bootstrapRequired;
+        throw err;
       }
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) {
+        const err = new Error(data.error) as Error & { bootstrapRequired?: boolean };
+        err.bootstrapRequired = !!data.bootstrap_required;
+        throw err;
+      }
 
       const status = data.status as 'pending' | 'approved';
 
@@ -178,8 +189,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('[Auth] Çıkış yapıldı');
   }, []);
 
-  const register = useCallback((email: string, password: string) => {
-    return registerMutation.mutateAsync({ email, password });
+  const register = useCallback((email: string, password: string, bootstrapToken?: string) => {
+    return registerMutation.mutateAsync({ email, password, bootstrapToken });
   }, [registerMutation]);
 
   const login = useCallback((email: string, password: string) => {

@@ -55,8 +55,11 @@ CREATE TABLE IF NOT EXISTS profiles (
   username TEXT DEFAULT '',
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  registered_from_ip TEXT
 );
+-- Mevcut tablolara registered_from_ip eklenmesini sağlar (idempotent)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS registered_from_ip TEXT;
 
 -- ============================================================
 -- stock_alerts: Kritik stok mail cooldown takibi (24 saat)
@@ -188,14 +191,32 @@ END $$;
 
 -- ============================================================
 -- password_reset_requests politikaları
--- Kayıtsız kullanıcılar talep gönderebilir (INSERT anon).
+-- Anon INSERT: yalnızca approved profili olan e-postalar için.
 -- Admin onaylayıp reddedebilir.
 -- ============================================================
+
+-- Güvenlik fonksiyonu: e-postanın approved profile sahip olup olmadığını kontrol eder.
+CREATE OR REPLACE FUNCTION public.can_request_password_reset(request_email TEXT)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE email = request_email AND status = 'approved'
+  );
+$$;
+
+-- Her e-posta için en fazla bir adet pending talep: spam engeli
+CREATE UNIQUE INDEX IF NOT EXISTS password_reset_requests_pending_email_unique
+  ON public.password_reset_requests (email)
+  WHERE status = 'pending';
+
+-- Mevcut anon insert politikasını kaldır ve güvenli sürümüyle yeniden oluştur.
+-- DROP + CREATE kullanarak mevcut WITH CHECK (true) politikasının üzerine yazılır.
+DROP POLICY IF EXISTS reset_req_anon_insert ON public.password_reset_requests;
+CREATE POLICY "reset_req_anon_insert"
+  ON password_reset_requests FOR INSERT TO anon
+  WITH CHECK (can_request_password_reset(email));
+
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_anon_insert') THEN
-    CREATE POLICY "reset_req_anon_insert"
-      ON password_reset_requests FOR INSERT TO anon WITH CHECK (true);
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_admin_all') THEN
     CREATE POLICY "reset_req_admin_all"
       ON password_reset_requests FOR ALL TO authenticated USING (is_admin());
