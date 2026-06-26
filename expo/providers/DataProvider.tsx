@@ -410,25 +410,6 @@ export const [DataProvider, useData] = createContextHook(() => {
 
       if (txError) throw txError;
 
-      const { data: existing } = await supabase
-        .from('inventory')
-        .select('*')
-        .eq('product_id', productId)
-        .eq('warehouse_id', warehouseId)
-        .maybeSingle();
-
-      if (existing) {
-        const newQty = type === 'IN'
-          ? existing.quantity + quantity
-          : Math.max(0, existing.quantity - quantity);
-        await supabase.from('inventory').update({ quantity: newQty }).eq('id', existing.id);
-      } else {
-        await supabase.from('inventory').insert({
-          product_id: productId, warehouse_id: warehouseId,
-          quantity: type === 'IN' ? quantity : 0,
-        });
-      }
-
       try {
         const { data: invRows } = await supabase.from('inventory').select('quantity').eq('product_id', productId);
         const totalStock = (invRows ?? []).reduce((sum: number, r: { quantity: number }) => sum + (r.quantity ?? 0), 0);

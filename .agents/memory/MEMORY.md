@@ -1,5 +1,6 @@
 - [Auth Architecture](auth-architecture.md) — App uses Supabase Auth (signUp/signInWithPassword); custom hashPassword removed; registration via register-user Edge Function.
 - [RLS & Security](rls-security.md) — All anon_all_* policies removed; is_admin()/is_approved_user() SECURITY DEFINER functions gate access; profiles.id is UUID FK to auth.users.
+- [RLS Role-Write Boundary](rls-role-write-boundary.md) — is_admin_or_chef() gates product/warehouse/transaction writes; staff limited to OUT transactions only; is_admin() requires status=approved to block revoked-admin self-reactivation.
 - [Bootstrap & Rate-limit Security](bootstrap-security.md) — First-user super_admin requires BOOTSTRAP_SECRET env var in Supabase secrets; password-reset RLS gates on can_request_password_reset(); registered_from_ip column enables IP rate limiting.
 - [Edge Functions](edge-functions.md) — register-user, admin-reset-password, delete-user, update-user-role deployed; all use service role key server-side; caller verified via JWT before privileged ops.
 - [Alert.alert blocked in iframe](alert-iframe.md) — window.confirm/Alert.alert is silently blocked inside browser iframes; always use inline confirmation UI state instead.
