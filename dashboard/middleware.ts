@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
+  const requestHeaders = new Headers(req.headers)
+
+  const cookiesToSet: Array<{ name: string; value: string; options: any }> = []
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,11 +12,8 @@ export async function middleware(req: NextRequest) {
     {
       cookies: {
         getAll() { return req.cookies.getAll() },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            req.cookies.set(name, value)
-            res.cookies.set(name, value, options)
-          })
+        setAll(incoming) {
+          incoming.forEach((c) => cookiesToSet.push(c))
         },
       },
     }
@@ -30,7 +29,7 @@ export async function middleware(req: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, status')
+    .select('role, status, location_id')
     .eq('id', user.id)
     .single()
 
@@ -41,7 +40,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  return res
+  requestHeaders.set('x-caller-id', user.id)
+  requestHeaders.set('x-caller-role', profile.role)
+  requestHeaders.set('x-caller-location-id', profile.location_id ?? '')
+
+  const response = NextResponse.next({ request: { headers: requestHeaders } })
+
+  cookiesToSet.forEach(({ name, value, options }) =>
+    response.cookies.set(name, value, options)
+  )
+
+  return response
 }
 
 export const config = {

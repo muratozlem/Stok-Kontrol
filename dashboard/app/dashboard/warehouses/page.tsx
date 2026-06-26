@@ -1,14 +1,30 @@
 export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getCallerContext, isSuperAdmin } from '@/lib/caller'
 import { Warehouse, MapPin, Package } from 'lucide-react'
 
 export default async function WarehousesPage() {
   const supabase = createServerSupabase()
+  const caller = await getCallerContext()
+  const superAdmin = isSuperAdmin(caller)
+
+  const locationId = caller.locationId ?? ''
 
   const [whRes, locRes, invRes] = await Promise.all([
-    supabase.from('warehouses').select('*').order('name'),
-    supabase.from('locations').select('id, name'),
-    supabase.from('inventory').select('warehouse_id, quantity'),
+    superAdmin
+      ? supabase.from('warehouses').select('*').order('name')
+      : supabase.from('warehouses').select('*').eq('location_id', locationId).order('name'),
+
+    superAdmin
+      ? supabase.from('locations').select('id, name')
+      : supabase.from('locations').select('id, name').eq('id', locationId),
+
+    superAdmin
+      ? supabase.from('inventory').select('warehouse_id, quantity')
+      : supabase
+          .from('inventory')
+          .select('warehouse_id, quantity, warehouses!inner(location_id)')
+          .eq('warehouses.location_id', locationId),
   ])
 
   const warehouses = whRes.data ?? []

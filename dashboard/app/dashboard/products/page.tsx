@@ -1,14 +1,27 @@
 export const dynamic = 'force-dynamic'
 import { createServerSupabase } from '@/lib/supabase-server'
-import { Package, AlertTriangle, Search } from 'lucide-react'
+import { getCallerContext, isSuperAdmin } from '@/lib/caller'
+import { Package, AlertTriangle } from 'lucide-react'
 
 export default async function ProductsPage() {
   const supabase = createServerSupabase()
+  const caller = await getCallerContext()
+  const superAdmin = isSuperAdmin(caller)
 
-  const { data: inventory } = await supabase
-    .from('inventory')
-    .select('id, quantity, product_id, warehouse_id, products!inner(id, name, barcode, unit, critical_stock_level), warehouses!inner(name, locations!inner(name))')
-    .order('quantity', { ascending: true })
+  const locationId = caller.locationId ?? ''
+
+  const inventoryQuery = superAdmin
+    ? supabase
+        .from('inventory')
+        .select('id, quantity, product_id, warehouse_id, products!inner(id, name, barcode, unit, critical_stock_level), warehouses!inner(name, locations!inner(name))')
+        .order('quantity', { ascending: true })
+    : supabase
+        .from('inventory')
+        .select('id, quantity, product_id, warehouse_id, products!inner(id, name, barcode, unit, critical_stock_level), warehouses!inner(name, locations!inner(name))')
+        .eq('warehouses.location_id', locationId)
+        .order('quantity', { ascending: true })
+
+  const { data: inventory } = await inventoryQuery
 
   const items = inventory ?? []
   const critical = items.filter((r: any) => {
