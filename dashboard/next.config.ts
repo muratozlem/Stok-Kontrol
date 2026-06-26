@@ -4,7 +4,7 @@ import path from 'path'
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   allowedDevOrigins: ['*.replit.dev', '*.pike.replit.dev'],
-  turbopack: { root: path.resolve(__dirname) },
+  turbopack: { root: path.resolve(__dirname, '..') },
   async headers() {
     return [
       {
