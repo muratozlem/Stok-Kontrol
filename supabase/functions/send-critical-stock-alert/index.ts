@@ -4,11 +4,23 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
+const ALLOWED_ORIGINS = [
+  'https://stokkontrol.replit.app',
+  'https://stokkontrol.tr',
+  'http://localhost:5000',
+  'http://localhost:3000',
+];
+
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') ?? '';
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Vary': 'Origin',
+  };
+}
 
 function esc(v: string | number | undefined | null): string {
   if (v === null || v === undefined) return '';
@@ -67,18 +79,18 @@ function buildEmailHtml(info: {
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers: getCorsHeaders(req) });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: getCorsHeaders(req) });
   }
 
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Yetkilendirme başlığı eksik' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -89,7 +101,7 @@ Deno.serve(async (req: Request) => {
     const { data: { user }, error: userError } = await anonClient.auth.getUser();
     if (userError || !user) {
       return new Response(JSON.stringify({ error: 'Geçersiz oturum' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -103,7 +115,7 @@ Deno.serve(async (req: Request) => {
 
     if (!callerProfile || callerProfile.status !== 'approved' || !['super_admin', 'admin', 'chef'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Bu işlem için yetkiniz yok' }), {
-        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -112,7 +124,7 @@ Deno.serve(async (req: Request) => {
 
     if (!productId || !productName) {
       return new Response(JSON.stringify({ error: 'productId ve productName zorunludur' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -143,7 +155,7 @@ Deno.serve(async (req: Request) => {
 
     if (profilesError) {
       console.error('[send-critical-stock-alert] Profil sorgu hatası:', profilesError.message);
-      return new Response(JSON.stringify({ error: profilesError.message }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: profilesError.message }), { status: 500, headers: getCorsHeaders(req) });
     }
 
     const recipients: string[] = (adminProfiles ?? [])
@@ -152,7 +164,7 @@ Deno.serve(async (req: Request) => {
 
     if (recipients.length === 0) {
       console.log('[send-critical-stock-alert] Alıcı yok | lokasyon:', locationId ?? '(yok)');
-      return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }), { headers: getCorsHeaders(req) });
     }
 
     const htmlContent = buildEmailHtml({
@@ -184,7 +196,7 @@ Deno.serve(async (req: Request) => {
 
     if (!resendRes.ok) {
       console.error('[send-critical-stock-alert] Resend hatası:', resendRes.status, JSON.stringify(resendData));
-      return new Response(JSON.stringify({ error: 'Email gönderilemedi', details: resendData }), { status: 500, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: 'Email gönderilemedi', details: resendData }), { status: 500, headers: getCorsHeaders(req) });
     }
 
     console.log(
@@ -196,11 +208,11 @@ Deno.serve(async (req: Request) => {
       ok: true,
       id: (resendData as { id?: string }).id,
       recipientCount: recipients.length,
-    }), { headers: corsHeaders });
+    }), { headers: getCorsHeaders(req) });
 
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[send-critical-stock-alert] Hata:', msg);
-    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: getCorsHeaders(req) });
   }
 });

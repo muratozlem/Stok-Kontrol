@@ -164,7 +164,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         throw new Error('Üyelik talebiniz reddedildi.');
       }
 
-      console.log('[Auth] Giriş başarılı:', profile.email, '/', profile.role, '/', profile.status);
+      console.log('[Auth] Giriş başarılı, rol:', profile.role);
       return profile;
     },
     onSuccess: (user) => {

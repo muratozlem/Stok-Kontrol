@@ -20,6 +20,14 @@ function strictEmail(raw: string): string | null {
   return e;
 }
 
+async function hashCode(code: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(code);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
@@ -45,6 +53,7 @@ Deno.serve(async (req: Request) => {
         .eq('email', email)
         .limit(1);
 
+      // Email enumeration önleme: kayıtlı olup olmadığına bakılmaksızın 200 dön
       if (!profiles?.length) {
         return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
       }
@@ -67,11 +76,13 @@ Deno.serve(async (req: Request) => {
       }
 
       const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const hashedCode = await hashCode(resetCode);
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       const createdAt = new Date().toISOString();
 
+      // OTP hash olarak saklanıyor — plaintext kod asla DB'ye yazılmıyor
       await adminClient.from('password_reset_tokens').upsert(
-        { email, code: resetCode, expires_at: expiresAt, attempts: 0, created_at: createdAt },
+        { email, code: hashedCode, expires_at: expiresAt, attempts: 0, created_at: createdAt },
         { onConflict: 'email' },
       );
 
@@ -141,7 +152,9 @@ Deno.serve(async (req: Request) => {
         });
       }
 
-      if (token.code !== String(code)) {
+      // Gönderilen kodu hash'leyip saklanan hash ile karşılaştır
+      const submittedHash = await hashCode(String(code));
+      if (token.code !== submittedHash) {
         const newAttempts = currentAttempts + 1;
         const remaining = MAX_ATTEMPTS - newAttempts;
 
