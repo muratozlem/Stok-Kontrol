@@ -56,27 +56,6 @@ CREATE POLICY "profiles_delete_admin"
   );
 
 -- ============================================================
--- FIX 4: password_reset_requests — super_admin sees all;
---         admin can only manage requests from users whose
---         profile is assigned to the admin's own location.
--- ============================================================
-DROP POLICY IF EXISTS "reset_req_admin_all" ON password_reset_requests;
-
-CREATE POLICY "reset_req_admin_all"
-  ON password_reset_requests FOR ALL TO authenticated
-  USING (
-    is_super_admin()
-    OR (
-      is_admin()
-      AND EXISTS (
-        SELECT 1 FROM public.profiles p
-        WHERE p.email = password_reset_requests.email
-          AND p.location_id = get_user_location_id()
-      )
-    )
-  );
-
--- ============================================================
 -- FIX 5: warehouses — approved users restricted to their
 --         location; super_admin has global access.
 -- ============================================================

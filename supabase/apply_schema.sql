@@ -73,16 +73,6 @@ CREATE TABLE IF NOT EXISTS stock_alerts (
 CREATE INDEX IF NOT EXISTS idx_stock_alerts_product ON stock_alerts(product_id);
 
 -- ============================================================
--- password_reset_requests: Şifre sıfırlama talepleri (admin onaylı)
--- ============================================================
-CREATE TABLE IF NOT EXISTS password_reset_requests (
-  id TEXT PRIMARY KEY,
-  email TEXT NOT NULL CHECK (email NOT LIKE '%\%%' AND email NOT LIKE '%_%' ESCAPE '\'),
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ============================================================
 -- Yardımcı güvenlik fonksiyonları
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.is_admin()
@@ -118,7 +108,6 @@ ALTER TABLE inventory             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_alerts          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE password_reset_requests ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 -- Eski anon politikalarını temizle
@@ -130,7 +119,6 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "anon_all_transactions"              ON transactions;
   DROP POLICY IF EXISTS "anon_all_profiles"                  ON profiles;
   DROP POLICY IF EXISTS "anon_all_stock_alerts"              ON stock_alerts;
-  DROP POLICY IF EXISTS "anon_all_password_reset_requests"   ON password_reset_requests;
 END $$;
 
 -- ============================================================
@@ -186,28 +174,6 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='stock_alerts' AND policyname='stock_alerts_admin') THEN
     CREATE POLICY "stock_alerts_admin"
       ON stock_alerts FOR ALL TO authenticated USING (is_admin());
-  END IF;
-END $$;
-
--- ============================================================
--- password_reset_requests politikaları
--- Anon INSERT kaldırıldı: hesap sıralaması açığını önlemek için
--- tüm reset talepleri artık service-role edge function üzerinden geçer.
--- Admin onaylayıp reddedebilir.
--- ============================================================
-
--- Her e-posta için en fazla bir adet pending talep: spam engeli
-CREATE UNIQUE INDEX IF NOT EXISTS password_reset_requests_pending_email_unique
-  ON public.password_reset_requests (email)
-  WHERE status = 'pending';
-
--- Anon insert politikasını kaldır — edge function servis rolüyle ekler
-DROP POLICY IF EXISTS reset_req_anon_insert ON public.password_reset_requests;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='password_reset_requests' AND policyname='reset_req_admin_all') THEN
-    CREATE POLICY "reset_req_admin_all"
-      ON password_reset_requests FOR ALL TO authenticated USING (is_admin());
   END IF;
 END $$;
 

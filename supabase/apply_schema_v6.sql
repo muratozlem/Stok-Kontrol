@@ -2,6 +2,12 @@
 -- Stok Kontrol — Schema v6: password_reset_requests Cleanup
 -- Applies on top of apply_schema_v5c.sql
 --
+-- NOTE: THIS FILE IS SUPERSEDED BY apply_schema_v7.sql.
+-- apply_schema_v7.sql drops the password_reset_requests table
+-- entirely (DROP TABLE … CASCADE), which makes all of the policy
+-- and constraint changes below permanently moot. Do not re-run
+-- this file against a database that has already applied v7.
+--
 -- The admin-approval password-reset flow has been removed.
 -- Previously, a user submitted a reset request (status='pending'),
 -- an admin would review it and set a new password via the
