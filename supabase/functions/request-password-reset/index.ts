@@ -67,24 +67,6 @@ Deno.serve(async (req: Request) => {
       .delete()
       .lt('requested_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
 
-    const { data: profile } = await adminClient
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .eq('status', 'approved')
-      .maybeSingle();
-
-    await adminClient
-      .from('password_reset_requests')
-      .delete()
-      .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-    if (profile) {
-      await adminClient
-        .from('password_reset_requests')
-        .insert({ id: crypto.randomUUID(), email, status: 'pending' });
-    }
-
     return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
   } catch (_e) {
     return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
