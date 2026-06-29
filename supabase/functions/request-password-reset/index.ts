@@ -74,6 +74,11 @@ Deno.serve(async (req: Request) => {
       .eq('status', 'approved')
       .maybeSingle();
 
+    await adminClient
+      .from('password_reset_requests')
+      .delete()
+      .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
     if (profile) {
       await adminClient
         .from('password_reset_requests')
