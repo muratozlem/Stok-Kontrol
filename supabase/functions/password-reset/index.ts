@@ -234,10 +234,6 @@ Deno.serve(async (req: Request) => {
 
       await adminClient.from('password_reset_tokens').delete().eq('email', email);
 
-      // Clean up any pending password_reset_requests row for this email so
-      // the table only ever contains genuinely unfulfilled requests.
-      await adminClient.from('password_reset_requests').delete().eq('email', email);
-
       return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
     }
 
