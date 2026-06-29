@@ -2,7 +2,8 @@
 - [RLS & Security](rls-security.md) — All anon_all_* policies removed; is_admin()/is_approved_user() SECURITY DEFINER functions gate access; profiles.id is UUID FK to auth.users.
 - [RLS Role-Write Boundary](rls-role-write-boundary.md) — is_admin_or_chef() gates product/warehouse/transaction writes; staff limited to OUT transactions only; is_admin() requires status=approved to block revoked-admin self-reactivation.
 - [Bootstrap & Rate-limit Security](bootstrap-security.md) — First-user super_admin requires BOOTSTRAP_SECRET env var in Supabase secrets; password-reset RLS gates on can_request_password_reset(); registered_from_ip column enables IP rate limiting.
-- [Edge Functions](edge-functions.md) — register-user, admin-reset-password, delete-user, update-user-role deployed; all use service role key server-side; caller verified via JWT before privileged ops.
+- [Edge Functions](edge-functions.md) — register-user, delete-user, update-user-role, password-reset, send-critical-stock-alert deployed; admin-reset-password DELETED (flow removed). All use service-role key; caller JWT verified before privileged ops.
+- [Password Reset — OTP Only](password-reset-otp-only.md) — The ONLY password reset path is self-service OTP via Supabase Auth to the user's email. Admin-approval flow is permanently dead. Never route resets to admins.
 - [Alert.alert blocked in iframe](alert-iframe.md) — window.confirm/Alert.alert is silently blocked inside browser iframes; always use inline confirmation UI state instead.
 - [Build pattern](build-pattern.md) — Expo web build: kill all processes first, then `bunx expo export -p web --output-dir dist` synchronously (needs ~2min); workflow serves `dist` via `bunx serve dist -l 5000 --single`.
 - [Role System](role-system.md) — 4-tier: super_admin > admin (İdari İşler) > chef (Şef) > staff (Personel); locations table added; update-user-role edge function handles role+location assignments with caller validation.

@@ -45,11 +45,19 @@ Deno.serve(async (req: Request) => {
     const adminClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const windowStart = new Date(Date.now() - IP_WINDOW_MINUTES * 60 * 1000).toISOString();
-    const { count } = await adminClient
+    const { count, error: countError } = await adminClient
       .from('password_reset_ip_log')
       .select('*', { count: 'exact', head: true })
       .eq('ip', ip)
       .gte('requested_at', windowStart);
+
+    if (countError) {
+      console.error('[password-reset] IP log count failed:', countError.message);
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.' }),
+        { status: 500, headers: resHeaders },
+      );
+    }
 
     if ((count ?? 0) >= IP_MAX_REQUESTS) {
       return new Response(
@@ -58,9 +66,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    await adminClient
+    const { error: insertError } = await adminClient
       .from('password_reset_ip_log')
       .insert({ ip, requested_at: new Date().toISOString() });
+
+    if (insertError) {
+      console.error('[password-reset] IP log insert failed:', insertError.message);
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.' }),
+        { status: 500, headers: resHeaders },
+      );
+    }
 
     await adminClient
       .from('password_reset_ip_log')
@@ -69,6 +85,10 @@ Deno.serve(async (req: Request) => {
 
     return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
   } catch (_e) {
-    return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
+    console.error('[password-reset] Unexpected error:', _e);
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Sunucu hatası. Lütfen daha sonra tekrar deneyin.' }),
+      { status: 500, headers: resHeaders },
+    );
   }
 });
