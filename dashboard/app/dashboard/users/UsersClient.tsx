@@ -95,7 +95,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/delete-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ user_id: userId }),
+        body: JSON.stringify({ targetUserId: userId }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Silinemedi') }
       setDeleteConfirm(null)
