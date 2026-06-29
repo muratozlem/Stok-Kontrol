@@ -1,44 +1,43 @@
 'use client'
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
-  FileText, TrendingUp, TrendingDown, FileSpreadsheet,
-  Download, ChevronDown, X, SlidersHorizontal, ExternalLink,
+  Package, Warehouse, AlertTriangle, CheckCircle2,
+  FileSpreadsheet, Download, ChevronDown, SlidersHorizontal, X,
 } from 'lucide-react'
 
-interface Transaction {
-  id: string
-  type: string
+interface InvRow {
   quantity: number
-  note: string | null
-  created_at: string
-  products: { name: string } | null
-  warehouses: { name: string; locations: { name: string } | null } | null
+  products: { id: string; name: string; unit: string; critical_stock_level: number } | null
+  warehouses: { id: string; name: string; location_id: string | null; locations: { id: string; name: string } | null } | null
 }
 interface Location { id: string; name: string }
 interface Warehouse { id: string; name: string; location_id: string | null }
-interface Product { id: string; name: string }
 
 interface Props {
-  transactions: Transaction[]
+  inventoryRows: InvRow[]
   locations: Location[]
   warehouses: Warehouse[]
-  products: Product[]
 }
 
-const EMPTY = ''
+interface ProductStock {
+  id: string
+  name: string
+  unit: string
+  criticalLevel: number
+  totalStock: number
+  isCritical: boolean
+  warehouses: { warehouseId: string; warehouseName: string; locationId: string | null; locationName: string; qty: number }[]
+}
 
-function SelectFilter({
-  label, value, onChange, children,
-}: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+function SelectFilter({ label, value, onChange, children }: {
+  label: string; value: string; onChange: (v: string) => void; children: React.ReactNode
+}) {
   return (
-    <div className="flex flex-col gap-1 min-w-[140px]">
+    <div className="flex flex-col gap-1 min-w-[150px]">
       <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider px-1">{label}</label>
       <div className="relative">
-        <select
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl px-3 pr-8 py-2 text-sm text-slate-300 outline-none focus:border-sky-500 cursor-pointer"
-        >
+        <select value={value} onChange={e => onChange(e.target.value)}
+          className="w-full appearance-none bg-white/5 border border-white/10 rounded-xl px-3 pr-8 py-2 text-sm text-slate-300 outline-none focus:border-sky-500 cursor-pointer">
           {children}
         </select>
         <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
@@ -47,81 +46,89 @@ function SelectFilter({
   )
 }
 
-function DateInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="flex flex-col gap-1 min-w-[140px]">
-      <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider px-1">{label}</label>
-      <input
-        type="date"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none focus:border-sky-500 [color-scheme:dark]"
-      />
-    </div>
-  )
-}
-
-export default function ReportsClient({ transactions, locations, warehouses, products }: Props) {
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'IN' | 'OUT'>('ALL')
-  const [locationId, setLocationId] = useState(EMPTY)
-  const [warehouseId, setWarehouseId] = useState(EMPTY)
-  const [productId, setProductId] = useState(EMPTY)
-  const [dateFrom, setDateFrom] = useState(EMPTY)
-  const [dateTo, setDateTo] = useState(EMPTY)
+export default function ReportsClient({ inventoryRows, locations, warehouses }: Props) {
+  const [locationId, setLocationId] = useState('')
+  const [warehouseId, setWarehouseId] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'CRITICAL' | 'NORMAL'>('ALL')
   const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null)
   const [showFilters, setShowFilters] = useState(true)
+  const [expandedProduct, setExpandedProduct] = useState<string | null>(null)
 
   const availableWarehouses = useMemo(
     () => locationId ? warehouses.filter(w => w.location_id === locationId) : warehouses,
     [locationId, warehouses]
   )
 
-  const filtered = useMemo(() => {
-    return transactions.filter(t => {
-      if (typeFilter !== 'ALL' && t.type !== typeFilter) return false
-      if (locationId && t.warehouses?.locations?.name !== locations.find(l => l.id === locationId)?.name) return false
-      if (warehouseId && t.warehouses?.name !== warehouses.find(w => w.id === warehouseId)?.name) return false
-      if (productId && t.products?.name !== products.find(p => p.id === productId)?.name) return false
-      if (dateFrom) {
-        const d = new Date(t.created_at)
-        const from = new Date(dateFrom)
-        from.setHours(0, 0, 0, 0)
-        if (d < from) return false
+  const productMap = useMemo<Record<string, ProductStock>>(() => {
+    const map: Record<string, ProductStock> = {}
+    for (const row of inventoryRows) {
+      if (!row.products || !row.warehouses) continue
+      const p = row.products
+      const w = row.warehouses
+
+      if (!map[p.id]) {
+        map[p.id] = {
+          id: p.id, name: p.name, unit: p.unit || 'adet',
+          criticalLevel: p.critical_stock_level ?? 0,
+          totalStock: 0, isCritical: false, warehouses: [],
+        }
       }
-      if (dateTo) {
-        const d = new Date(t.created_at)
-        const to = new Date(dateTo)
-        to.setHours(23, 59, 59, 999)
-        if (d > to) return false
+      map[p.id].totalStock += row.quantity
+      map[p.id].warehouses.push({
+        warehouseId: w.id,
+        warehouseName: w.name,
+        locationId: w.location_id,
+        locationName: w.locations?.name ?? '—',
+        qty: row.quantity,
+      })
+    }
+    for (const ps of Object.values(map)) {
+      ps.isCritical = ps.criticalLevel > 0 && ps.totalStock <= ps.criticalLevel
+    }
+    return map
+  }, [inventoryRows])
+
+  const filtered = useMemo(() => {
+    return Object.values(productMap).filter(ps => {
+      if (statusFilter === 'CRITICAL' && !ps.isCritical) return false
+      if (statusFilter === 'NORMAL' && ps.isCritical) return false
+
+      if (locationId || warehouseId) {
+        const hasMatch = ps.warehouses.some(w =>
+          (!locationId || w.locationId === locationId) &&
+          (!warehouseId || w.warehouseId === warehouseId)
+        )
+        if (!hasMatch) return false
       }
       return true
+    }).map(ps => {
+      if (!locationId && !warehouseId) return ps
+      const filteredWhs = ps.warehouses.filter(w =>
+        (!locationId || w.locationId === locationId) &&
+        (!warehouseId || w.warehouseId === warehouseId)
+      )
+      const filteredTotal = filteredWhs.reduce((s, w) => s + w.qty, 0)
+      return { ...ps, warehouses: filteredWhs, totalStock: filteredTotal }
+    }).sort((a, b) => {
+      if (a.isCritical && !b.isCritical) return -1
+      if (!a.isCritical && b.isCritical) return 1
+      return a.name.localeCompare(b.name, 'tr')
     })
-  }, [transactions, typeFilter, locationId, warehouseId, productId, dateFrom, dateTo, locations, warehouses, products])
+  }, [productMap, locationId, warehouseId, statusFilter])
 
-  const filteredIn = filtered.filter(t => t.type === 'IN').reduce((s, t) => s + (t.quantity ?? 0), 0)
-  const filteredOut = filtered.filter(t => t.type === 'OUT').reduce((s, t) => s + (t.quantity ?? 0), 0)
-  const net = filteredIn - filteredOut
+  const totalProducts = filtered.length
+  const totalStock = filtered.reduce((s, p) => s + p.totalStock, 0)
+  const criticalCount = filtered.filter(p => p.isCritical).length
+  const activeWarehouseCount = useMemo(() => {
+    const ids = new Set<string>()
+    for (const row of inventoryRows) if (row.warehouses) ids.add(row.warehouses.id)
+    return ids.size
+  }, [inventoryRows])
 
-  const hasActiveFilter = typeFilter !== 'ALL' || locationId || warehouseId || productId || dateFrom || dateTo
+  const hasActiveFilter = locationId || warehouseId || statusFilter !== 'ALL'
 
   function resetFilters() {
-    setTypeFilter('ALL')
-    setLocationId(EMPTY)
-    setWarehouseId(EMPTY)
-    setProductId(EMPTY)
-    setDateFrom(EMPTY)
-    setDateTo(EMPTY)
-  }
-
-  function filterSummaryText() {
-    const parts: string[] = []
-    if (typeFilter !== 'ALL') parts.push(typeFilter === 'IN' ? 'Giriş' : 'Çıkış')
-    if (locationId) parts.push(`Lokasyon: ${locations.find(l => l.id === locationId)?.name}`)
-    if (warehouseId) parts.push(`Depo: ${warehouses.find(w => w.id === warehouseId)?.name}`)
-    if (productId) parts.push(`Ürün: ${products.find(p => p.id === productId)?.name}`)
-    if (dateFrom) parts.push(`Başlangıç: ${new Date(dateFrom).toLocaleDateString('tr-TR')}`)
-    if (dateTo) parts.push(`Bitiş: ${new Date(dateTo).toLocaleDateString('tr-TR')}`)
-    return parts.length ? parts.join(' | ') : 'Tümü'
+    setLocationId(''); setWarehouseId(''); setStatusFilter('ALL')
   }
 
   async function exportExcel() {
@@ -132,37 +139,55 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
       wb.creator = 'Stok Kontrol'
       wb.created = new Date()
 
-      const ws = wb.addWorksheet('İşlemler')
+      const ws = wb.addWorksheet('Stok Durumu')
       ws.columns = [
-        { header: 'Tarih', key: 'tarih', width: 22 },
-        { header: 'Tür', key: 'tur', width: 10 },
-        { header: 'Ürün', key: 'urun', width: 24 },
-        { header: 'Depo', key: 'depo', width: 20 },
+        { header: 'Ürün', key: 'urun', width: 28 },
+        { header: 'Birim', key: 'birim', width: 10 },
+        { header: 'Toplam Stok', key: 'toplam', width: 14 },
+        { header: 'Kritik Seviye', key: 'kritik_seviye', width: 14 },
+        { header: 'Durum', key: 'durum', width: 12 },
+        { header: 'Depo', key: 'depo', width: 22 },
         { header: 'Lokasyon', key: 'lokasyon', width: 20 },
-        { header: 'Miktar', key: 'miktar', width: 12 },
-        { header: 'Not', key: 'not', width: 32 },
+        { header: 'Depo Stoğu', key: 'depo_stok', width: 12 },
       ]
       ws.getRow(1).font = { bold: true }
 
-      filtered.forEach(t => {
-        ws.addRow({
-          tarih: new Date(t.created_at).toLocaleString('tr-TR'),
-          tur: t.type === 'IN' ? 'Giriş' : 'Çıkış',
-          urun: t.products?.name ?? '',
-          depo: t.warehouses?.name ?? '',
-          lokasyon: t.warehouses?.locations?.name ?? '',
-          miktar: t.type === 'IN' ? t.quantity : -t.quantity,
-          not: t.note ?? '',
-        })
+      for (const ps of filtered) {
+        if (ps.warehouses.length === 0) {
+          ws.addRow({
+            urun: ps.name, birim: ps.unit, toplam: ps.totalStock,
+            kritik_seviye: ps.criticalLevel || '—',
+            durum: ps.isCritical ? 'KRİTİK' : 'Normal',
+            depo: '—', lokasyon: '—', depo_stok: 0,
+          })
+        } else {
+          for (const w of ps.warehouses) {
+            ws.addRow({
+              urun: ps.name, birim: ps.unit, toplam: ps.totalStock,
+              kritik_seviye: ps.criticalLevel || '—',
+              durum: ps.isCritical ? 'KRİTİK' : 'Normal',
+              depo: w.warehouseName, lokasyon: w.locationName, depo_stok: w.qty,
+            })
+          }
+        }
+      }
+
+      ws.eachRow((row, i) => {
+        if (i === 1) return
+        const durum = row.getCell('durum').value
+        if (durum === 'KRİTİK') {
+          row.getCell('durum').font = { color: { argb: 'FFF87171' }, bold: true }
+          row.getCell('toplam').font = { color: { argb: 'FFF87171' }, bold: true }
+        }
       })
 
       const ws2 = wb.addWorksheet('Özet')
       ws2.addRows([
-        ['Toplam Giriş', filteredIn],
-        ['Toplam Çıkış', filteredOut],
-        ['Net', net],
-        ['Filtreler', filterSummaryText()],
-        ['Oluşturulma', new Date().toLocaleString('tr-TR')],
+        ['Toplam Ürün Çeşidi', totalProducts],
+        ['Toplam Stok Miktarı', totalStock],
+        ['Kritik Stok Sayısı', criticalCount],
+        ['Aktif Depo Sayısı', activeWarehouseCount],
+        ['Rapor Tarihi', new Date().toLocaleString('tr-TR')],
       ])
 
       const buffer = await wb.xlsx.writeBuffer()
@@ -171,9 +196,8 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      const tarih = new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')
       a.href = url
-      a.download = `stok-rapor-${tarih}.xlsx`
+      a.download = `stok-rapor-${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
     } finally {
@@ -188,53 +212,55 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
       const { default: autoTable } = await import('jspdf-autotable')
 
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-
       doc.setFont('helvetica', 'bold')
       doc.setFontSize(18)
       doc.setTextColor(14, 165, 233)
-      doc.text('Stok Kontrol - Rapor', 14, 16)
+      doc.text('Stok Kontrol - Depo Raporu', 14, 16)
 
       doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       doc.setTextColor(100, 116, 139)
-      doc.text(`Oluşturulma: ${new Date().toLocaleString('tr-TR')}`, 14, 23)
-      doc.text(`Filtreler: ${filterSummaryText()}`, 14, 28)
+      doc.text(`Rapor Tarihi: ${new Date().toLocaleString('tr-TR')}`, 14, 23)
       doc.text(
-        `Toplam Giriş: ${filteredIn.toLocaleString('tr-TR')}   |   Toplam Çıkış: ${filteredOut.toLocaleString('tr-TR')}   |   Net: ${net >= 0 ? '+' : ''}${net.toLocaleString('tr-TR')}`,
-        14, 33
+        `Ürün: ${totalProducts}  |  Toplam Stok: ${totalStock.toLocaleString('tr-TR')}  |  Kritik: ${criticalCount}  |  Depo: ${activeWarehouseCount}`,
+        14, 28,
       )
 
       autoTable(doc, {
-        startY: 38,
-        head: [['Tarih', 'Tür', 'Ürün', 'Depo', 'Lokasyon', 'Miktar', 'Not']],
-        body: filtered.map(t => [
-          new Date(t.created_at).toLocaleString('tr-TR'),
-          t.type === 'IN' ? 'Giriş' : 'Çıkış',
-          t.products?.name ?? '',
-          t.warehouses?.name ?? '',
-          t.warehouses?.locations?.name ?? '',
-          (t.type === 'IN' ? '+' : '-') + (t.quantity ?? 0).toLocaleString('tr-TR'),
-          t.note ?? '',
-        ]),
-        headStyles: { fillColor: [15, 23, 42], textColor: [148, 163, 184], fontStyle: 'bold', fontSize: 8 },
-        bodyStyles: { fontSize: 8, textColor: [226, 232, 240] },
+        startY: 34,
+        head: [['Ürün', 'Birim', 'Toplam Stok', 'Kritik Seviye', 'Durum', 'Depo', 'Lokasyon', 'Depo Stoğu']],
+        body: filtered.flatMap(ps =>
+          ps.warehouses.length === 0
+            ? [[ps.name, ps.unit, ps.totalStock.toLocaleString('tr-TR'), ps.criticalLevel || '—', ps.isCritical ? 'KRİTİK' : 'Normal', '—', '—', '0']]
+            : ps.warehouses.map(w => [
+                ps.name, ps.unit, ps.totalStock.toLocaleString('tr-TR'),
+                ps.criticalLevel || '—',
+                ps.isCritical ? 'KRİTİK' : 'Normal',
+                w.warehouseName, w.locationName, w.qty.toLocaleString('tr-TR'),
+              ])
+        ),
+        headStyles: { fillColor: [15, 23, 42], textColor: [148, 163, 184], fontStyle: 'bold', fontSize: 7 },
+        bodyStyles: { fontSize: 7, textColor: [226, 232, 240] },
         alternateRowStyles: { fillColor: [15, 23, 42] },
         styles: { fillColor: [30, 41, 59], lineColor: [51, 65, 85], lineWidth: 0.1 },
         didParseCell(data) {
-          if (data.section === 'body' && data.column.index === 1) {
-            const val = data.cell.raw as string
-            data.cell.styles.textColor = val === 'Giriş' ? [52, 211, 153] : [248, 113, 113]
+          if (data.section === 'body' && data.column.index === 4) {
+            if (data.cell.raw === 'KRİTİK') {
+              data.cell.styles.textColor = [248, 113, 113]
+              data.cell.styles.fontStyle = 'bold'
+            }
           }
-          if (data.section === 'body' && data.column.index === 5) {
-            const val = data.cell.raw as string
-            data.cell.styles.textColor = val.startsWith('+') ? [52, 211, 153] : [248, 113, 113]
-            data.cell.styles.fontStyle = 'bold'
+          if (data.section === 'body' && data.column.index === 2) {
+            const row = filtered.flatMap(ps =>
+              ps.warehouses.length === 0 ? [ps] : ps.warehouses.map(() => ps)
+            )[data.row.index]
+            if (row?.isCritical) data.cell.styles.textColor = [248, 113, 113]
           }
         },
         columnStyles: {
-          0: { cellWidth: 35 }, 1: { cellWidth: 15, halign: 'center' },
-          2: { cellWidth: 40 }, 3: { cellWidth: 35 }, 4: { cellWidth: 30 },
-          5: { cellWidth: 22, halign: 'right' }, 6: { cellWidth: 'auto' },
+          0: { cellWidth: 45 }, 1: { cellWidth: 15 }, 2: { cellWidth: 22, halign: 'right' },
+          3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 38 }, 6: { cellWidth: 30 }, 7: { cellWidth: 22, halign: 'right' },
         },
         margin: { left: 14, right: 14 },
       })
@@ -244,40 +270,11 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
         doc.setPage(i)
         doc.setFontSize(7)
         doc.setTextColor(100, 116, 139)
-        doc.text(`Sayfa ${i} / ${pages}`, doc.internal.pageSize.getWidth() / 2, doc.internal.pageSize.getHeight() - 6, { align: 'center' })
+        doc.text(`Sayfa ${i} / ${pages}`, doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 6, { align: 'center' })
       }
 
-      const tarih = new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')
-      doc.save(`stok-rapor-${tarih}.pdf`)
-    } finally {
-      setExporting(null)
-    }
-  }
-
-  async function exportGoogleSheets() {
-    setExporting('sheets')
-    try {
-      const headers = ['Tarih', 'Tür', 'Ürün', 'Depo', 'Lokasyon', 'Miktar', 'Not']
-      const rows = filtered.map(t => [
-        new Date(t.created_at).toLocaleString('tr-TR'),
-        t.type === 'IN' ? 'Giriş' : 'Çıkış',
-        t.products?.name ?? '',
-        t.warehouses?.name ?? '',
-        t.warehouses?.locations?.name ?? '',
-        (t.type === 'IN' ? 1 : -1) * (t.quantity ?? 0),
-        t.note ?? '',
-      ])
-      const csv = [headers, ...rows]
-        .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-        .join('\n')
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `stok-rapor-${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-      setTimeout(() => window.open('https://sheets.new', '_blank'), 400)
+      doc.save(`stok-rapor-${new Date().toLocaleDateString('tr-TR').replace(/\./g, '-')}.pdf`)
     } finally {
       setExporting(null)
     }
@@ -285,12 +282,13 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
 
   return (
     <div className="p-6 space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-white">Raporlar</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Son 500 işlem · {filtered.length} sonuç gösteriliyor</p>
+          <h1 className="text-2xl font-bold text-white">Stok Raporu</h1>
+          <p className="text-sm text-slate-500 mt-0.5">Güncel depo ve stok durumu</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setShowFilters(v => !v)}
             className={`flex items-center gap-2 border rounded-xl px-4 py-2 text-sm font-medium transition-all ${showFilters ? 'bg-sky-500/15 border-sky-500/30 text-sky-400' : 'bg-white/5 border-white/10 text-slate-400 hover:text-slate-200'}`}
@@ -315,18 +313,10 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
             <Download className="w-4 h-4" />
             {exporting === 'pdf' ? 'İndiriliyor...' : 'PDF'}
           </button>
-          <button
-            onClick={exportGoogleSheets}
-            disabled={exporting !== null || filtered.length === 0}
-            title="CSV indirir ve Google Sheets açar — Dosya > İçe Aktar ile yükleyin"
-            className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 hover:border-blue-500/40 disabled:opacity-40 disabled:cursor-not-allowed text-blue-400 text-sm font-medium px-4 py-2 rounded-xl transition-all"
-          >
-            <ExternalLink className="w-4 h-4" />
-            {exporting === 'sheets' ? 'Hazırlanıyor...' : 'Google Sheets'}
-          </button>
         </div>
       </div>
 
+      {/* Filters */}
       {showFilters && (
         <div className="glass p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -337,77 +327,92 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
               </button>
             )}
           </div>
-
           <div className="flex flex-wrap gap-3">
-            <DateInput label="Başlangıç Tarihi" value={dateFrom} onChange={v => setDateFrom(v)} />
-            <DateInput label="Bitiş Tarihi" value={dateTo} onChange={v => setDateTo(v)} />
-
             {locations.length > 0 && (
-              <SelectFilter label="Lokasyon" value={locationId} onChange={v => { setLocationId(v); setWarehouseId(EMPTY) }}>
+              <SelectFilter label="Lokasyon" value={locationId} onChange={v => { setLocationId(v); setWarehouseId('') }}>
                 <option value="">Tüm Lokasyonlar</option>
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </SelectFilter>
             )}
-
             {warehouses.length > 0 && (
               <SelectFilter label="Depo" value={warehouseId} onChange={setWarehouseId}>
                 <option value="">Tüm Depolar</option>
                 {availableWarehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
               </SelectFilter>
             )}
-
-            {products.length > 0 && (
-              <SelectFilter label="Ürün" value={productId} onChange={setProductId}>
-                <option value="">Tüm Ürünler</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </SelectFilter>
-            )}
-
-            <SelectFilter label="İşlem Türü" value={typeFilter} onChange={v => setTypeFilter(v as 'ALL' | 'IN' | 'OUT')}>
-              <option value="ALL">Giriş & Çıkış</option>
-              <option value="IN">Sadece Giriş</option>
-              <option value="OUT">Sadece Çıkış</option>
+            <SelectFilter label="Stok Durumu" value={statusFilter} onChange={v => setStatusFilter(v as any)}>
+              <option value="ALL">Tümü</option>
+              <option value="CRITICAL">Yalnızca Kritik</option>
+              <option value="NORMAL">Yalnızca Normal</option>
             </SelectFilter>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
+          <div className="w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
+            <Package className="w-5 h-5 text-sky-400" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider">Toplam Giriş</p>
-            <p className="text-2xl font-bold text-emerald-400">{filteredIn.toLocaleString('tr-TR')}</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider">Ürün Çeşidi</p>
+            <p className="text-2xl font-bold text-sky-400">{totalProducts.toLocaleString('tr-TR')}</p>
           </div>
         </div>
         <div className="glass p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-            <TrendingDown className="w-5 h-5 text-red-400" />
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider">Toplam Çıkış</p>
-            <p className="text-2xl font-bold text-red-400">{filteredOut.toLocaleString('tr-TR')}</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider">Toplam Stok</p>
+            <p className="text-2xl font-bold text-emerald-400">{totalStock.toLocaleString('tr-TR')}</p>
           </div>
         </div>
         <div className="glass p-5 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-            <FileText className="w-5 h-5 text-sky-400" />
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${criticalCount > 0 ? 'bg-red-500/10 border border-red-500/20' : 'bg-slate-500/10 border border-slate-500/20'}`}>
+            <AlertTriangle className={`w-5 h-5 ${criticalCount > 0 ? 'text-red-400' : 'text-slate-500'}`} />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider">Net</p>
-            <p className={`text-2xl font-bold ${net >= 0 ? 'text-sky-400' : 'text-orange-400'}`}>
-              {net >= 0 ? '+' : ''}{net.toLocaleString('tr-TR')}
-            </p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider">Kritik Stok</p>
+            <p className={`text-2xl font-bold ${criticalCount > 0 ? 'text-red-400' : 'text-slate-500'}`}>{criticalCount}</p>
+          </div>
+        </div>
+        <div className="glass p-5 flex items-center gap-4">
+          <div className="w-11 h-11 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center shrink-0">
+            <Warehouse className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wider">Aktif Depo</p>
+            <p className="text-2xl font-bold text-purple-400">{activeWarehouseCount}</p>
           </div>
         </div>
       </div>
 
+      {/* Critical stock banner */}
+      {criticalCount > 0 && statusFilter !== 'NORMAL' && (
+        <div className="glass border border-red-500/20 bg-red-500/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-red-400" />
+            <p className="text-sm font-semibold text-red-400">Kritik Stok Uyarısı — {criticalCount} ürün eşiğin altında</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {filtered.filter(p => p.isCritical).map(p => (
+              <span key={p.id} className="inline-flex items-center gap-1.5 text-xs bg-red-500/10 border border-red-500/20 text-red-300 rounded-lg px-2.5 py-1.5">
+                <span className="font-medium">{p.name}</span>
+                <span className="text-red-500">·</span>
+                <span>{p.totalStock} / min {p.criticalLevel} {p.unit}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Product stock table */}
       {filtered.length === 0 ? (
         <div className="glass p-16 text-center">
-          <FileText className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-500">Bu filtrelere uyan işlem bulunamadı</p>
+          <Package className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-500">Bu filtrelere uyan ürün bulunamadı</p>
           {hasActiveFilter && (
             <button onClick={resetFilters} className="mt-3 text-xs text-sky-400 hover:text-sky-300 transition-colors">
               Filtreleri temizle
@@ -418,7 +423,7 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
         <div className="glass overflow-hidden">
           <div className="px-4 py-3 border-b border-white/5">
             <p className="text-xs text-slate-500">
-              {filtered.length} işlem
+              {filtered.length} ürün çeşidi
               {hasActiveFilter && <span className="ml-1 text-sky-500">· filtre uygulandı</span>}
             </p>
           </div>
@@ -426,36 +431,74 @@ export default function ReportsClient({ transactions, locations, warehouses, pro
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5">
-                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 whitespace-nowrap">Tarih</th>
-                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Tür</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Ürün</th>
-                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Depo / Lokasyon</th>
-                  <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Miktar</th>
-                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Not</th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Birim</th>
+                  <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Toplam Stok</th>
+                  <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Kritik Seviye</th>
+                  <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Durum</th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Depolar</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((t) => (
-                  <tr key={t.id} className="border-b border-white/5 last:border-0 hover:bg-white/2">
-                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {new Date(t.created_at).toLocaleString('tr-TR')}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 border ${t.type === 'IN' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                        {t.type === 'IN' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {t.type === 'IN' ? 'Giriş' : 'Çıkış'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{t.products?.name ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <p className="text-slate-300">{t.warehouses?.name ?? '—'}</p>
-                      <p className="text-xs text-slate-500">{t.warehouses?.locations?.name ?? ''}</p>
-                    </td>
-                    <td className={`px-4 py-3 text-right font-bold whitespace-nowrap ${t.type === 'IN' ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {t.type === 'IN' ? '+' : '-'}{(t.quantity ?? 0).toLocaleString('tr-TR')}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{t.note ?? '—'}</td>
-                  </tr>
+                {filtered.map(ps => (
+                  <React.Fragment key={ps.id}>
+                    <tr
+                      onClick={() => setExpandedProduct(expandedProduct === ps.id ? null : ps.id)}
+                      className={`border-b border-white/5 cursor-pointer transition-colors ${ps.isCritical ? 'hover:bg-red-500/5 bg-red-500/3' : 'hover:bg-white/2'}`}
+                    >
+                      <td className="px-4 py-3">
+                        <p className={`font-medium ${ps.isCritical ? 'text-red-300' : 'text-slate-200'}`}>{ps.name}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{ps.unit}</td>
+                      <td className={`px-4 py-3 text-right font-bold ${ps.isCritical ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {ps.totalStock.toLocaleString('tr-TR')}
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-500 text-xs">
+                        {ps.criticalLevel > 0 ? ps.criticalLevel.toLocaleString('tr-TR') : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {ps.isCritical ? (
+                          <span className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-red-500/10 border border-red-500/20 text-red-400">
+                            <AlertTriangle className="w-3 h-3" /> Kritik
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs rounded-full px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                            <CheckCircle2 className="w-3 h-3" /> Normal
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {ps.warehouses.slice(0, 3).map(w => (
+                            <span key={w.warehouseId} className="text-xs text-slate-400 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5">
+                              {w.warehouseName} <span className="text-slate-600">·</span> <span className="font-medium text-slate-300">{w.qty.toLocaleString('tr-TR')}</span>
+                            </span>
+                          ))}
+                          {ps.warehouses.length > 3 && (
+                            <span className="text-xs text-slate-500">+{ps.warehouses.length - 3}</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedProduct === ps.id && ps.warehouses.length > 0 && (
+                      <tr className="border-b border-white/5 bg-white/2">
+                        <td colSpan={6} className="px-6 py-3">
+                          <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-medium">Depo Bazlı Dağılım</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                            {ps.warehouses.map(w => (
+                              <div key={w.warehouseId} className="bg-white/3 border border-white/8 rounded-xl px-3 py-2">
+                                <p className="text-xs text-slate-300 font-medium">{w.warehouseName}</p>
+                                <p className="text-xs text-slate-500">{w.locationName}</p>
+                                <p className={`text-base font-bold mt-1 ${ps.isCritical ? 'text-red-400' : 'text-emerald-400'}`}>
+                                  {w.qty.toLocaleString('tr-TR')} <span className="text-xs font-normal text-slate-500">{ps.unit}</span>
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

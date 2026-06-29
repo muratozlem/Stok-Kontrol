@@ -7,22 +7,17 @@ export default async function ReportsPage() {
   const supabase = createServerSupabase()
   const caller = await getCallerContext()
   const superAdmin = isSuperAdmin(caller)
-
   const locationId = caller.locationId ?? ''
 
-  const [{ data: txns }, { data: locs }, { data: whs }, { data: prods }] = await Promise.all([
+  const [{ data: invRows }, { data: locs }, { data: whs }] = await Promise.all([
     superAdmin
       ? supabase
-          .from('transactions')
-          .select('id, type, quantity, note, created_at, products!inner(name), warehouses!inner(name, locations!inner(name))')
-          .order('created_at', { ascending: false })
-          .limit(500)
+          .from('inventory')
+          .select('quantity, products(id, name, unit, critical_stock_level), warehouses(id, name, location_id, locations(id, name))')
       : supabase
-          .from('transactions')
-          .select('id, type, quantity, note, created_at, products!inner(name), warehouses!inner(name, locations!inner(name))')
-          .eq('warehouses.location_id', locationId)
-          .order('created_at', { ascending: false })
-          .limit(500),
+          .from('inventory')
+          .select('quantity, products(id, name, unit, critical_stock_level), warehouses(id, name, location_id, locations(id, name))')
+          .eq('warehouses.location_id', locationId),
 
     superAdmin
       ? supabase.from('locations').select('id, name').order('name')
@@ -31,18 +26,13 @@ export default async function ReportsPage() {
     superAdmin
       ? supabase.from('warehouses').select('id, name, location_id').order('name')
       : supabase.from('warehouses').select('id, name, location_id').eq('location_id', locationId).order('name'),
-
-    superAdmin
-      ? supabase.from('products').select('id, name').order('name')
-      : supabase.from('products').select('id, name').eq('location_id', locationId).order('name'),
   ])
 
   return (
     <ReportsClient
-      transactions={(txns ?? []) as any[]}
+      inventoryRows={(invRows ?? []) as any[]}
       locations={locs ?? []}
       warehouses={whs ?? []}
-      products={prods ?? []}
     />
   )
 }
