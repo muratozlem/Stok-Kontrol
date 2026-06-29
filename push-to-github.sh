@@ -12,6 +12,14 @@ fi
 
 PUSH_URL="https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/muratozlem/Stok-Kontrol.git"
 
+# Reinitialize the bare mirror repo if it is missing or not a valid git repo.
+if ! git -C "$MIRROR" rev-parse --git-dir > /dev/null 2>&1; then
+  echo "==> Mirror directory missing or not a git repo — initializing bare repo at $MIRROR..."
+  rm -rf "$MIRROR"
+  git init --bare "$MIRROR"
+  echo "    Mirror initialized."
+fi
+
 echo "==> Exporting current history from Replit workspace..."
 git -C "$WORKSPACE" fast-export --use-done-feature HEAD \
   | git -C "$MIRROR" fast-import --force
