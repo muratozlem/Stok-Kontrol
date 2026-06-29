@@ -6,3 +6,4 @@ attached_assets/
 .local/
 .replit
 replit.nix
+.github-mirror/
