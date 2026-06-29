@@ -46,9 +46,7 @@ export default async function DashboardPage() {
       ? supabase.from('warehouses').select('id, name, location_id').order('name')
       : supabase.from('warehouses').select('id, name, location_id').eq('location_id', locationId).order('name'),
 
-    superAdmin
-      ? supabase.from('products').select('id, name').order('name')
-      : supabase.from('products').select('id, name').eq('location_id', locationId).order('name'),
+    supabase.from('products').select('id, name').order('name'),
 
     superAdmin
       ? supabase.from('profiles').select('id').eq('status', 'pending').neq('role', 'super_admin')
