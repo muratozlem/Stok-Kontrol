@@ -13,51 +13,53 @@ import {
   Package,
   ArrowDownLeft,
   CheckCircle,
+  Warehouse as WarehouseIcon,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useData } from '@/providers/DataProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import Colors from '@/constants/colors';
 import EmptyState from '@/components/EmptyState';
-import { Product } from '@/types';
+import { LowStockWarehouseItem } from '@/types';
 
 export default function CriticalStockPage() {
-  const { getLowStockProducts, getStockForProduct } = useData();
+  const { getLowStockWarehouseItems } = useData();
   const { isStaff } = useAuth();
-  const lowStockProducts = useMemo(
-    () => getLowStockProducts(),
-    [getLowStockProducts]
+
+  const lowStockItems = useMemo(
+    () => getLowStockWarehouseItems(),
+    [getLowStockWarehouseItems]
   );
 
-  const handleProduct = useCallback((id: string) => {
+  const handleProduct = useCallback((productId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push(`/product-detail?id=${id}`);
+    router.push(`/product-detail?id=${productId}`);
   }, []);
 
-  const handleStockIn = useCallback((productId: string) => {
+  const handleStockIn = useCallback((productId: string, warehouseId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push(`/stock-transaction?type=IN&productId=${productId}`);
+    router.push(`/stock-transaction?type=IN&productId=${productId}&warehouseId=${warehouseId}`);
   }, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: Product }) => {
-      const stock = getStockForProduct(item.id);
-      const deficit = Math.max(0, item.criticalStockLevel - stock);
-      const percent = item.criticalStockLevel > 0
-        ? Math.min(100, Math.round((stock / item.criticalStockLevel) * 100))
+    ({ item }: { item: LowStockWarehouseItem }) => {
+      const { product, warehouse, stock } = item;
+      const deficit = Math.max(0, product.criticalStockLevel - stock);
+      const percent = product.criticalStockLevel > 0
+        ? Math.min(100, Math.round((stock / product.criticalStockLevel) * 100))
         : 0;
 
       return (
         <TouchableOpacity
           style={styles.card}
-          onPress={() => handleProduct(item.id)}
+          onPress={() => handleProduct(product.id)}
           activeOpacity={0.85}
-          testID={`critical-${item.id}`}
+          testID={`critical-${product.id}-${warehouse.id}`}
         >
           <View style={styles.cardTop}>
-            {item.imageUrl ? (
+            {product.imageUrl ? (
               <Image
-                source={{ uri: item.imageUrl }}
+                source={{ uri: product.imageUrl }}
                 style={styles.productImage}
                 contentFit="cover"
               />
@@ -68,20 +70,25 @@ export default function CriticalStockPage() {
             )}
             <View style={styles.cardInfo}>
               <Text style={styles.productName} numberOfLines={1}>
-                {item.name}
+                {product.name}
               </Text>
-              <Text style={styles.barcode}>
-                {item.barcode || 'Barkod yok'}
-              </Text>
+              <View style={styles.warehouseBadge}>
+                <WarehouseIcon size={11} color={Colors.primary} strokeWidth={2.3} />
+                <Text style={styles.warehouseName} numberOfLines={1}>
+                  {warehouse.name}
+                </Text>
+              </View>
             </View>
-            <TouchableOpacity
-              style={styles.addBtn}
-              onPress={() => handleStockIn(item.id)}
-              activeOpacity={0.8}
-              testID={`critical-add-${item.id}`}
-            >
-              <ArrowDownLeft size={16} color={Colors.white} strokeWidth={2.5} />
-            </TouchableOpacity>
+            {!isStaff && (
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => handleStockIn(product.id, warehouse.id)}
+                activeOpacity={0.8}
+                testID={`critical-add-${product.id}-${warehouse.id}`}
+              >
+                <ArrowDownLeft size={16} color={Colors.white} strokeWidth={2.5} />
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.progressTrack}>
@@ -97,14 +104,14 @@ export default function CriticalStockPage() {
             <View style={styles.footerItem}>
               <Text style={styles.footerLabel}>Mevcut</Text>
               <Text style={[styles.footerValue, { color: Colors.danger }]}>
-                {stock} {item.unit}
+                {stock} {product.unit}
               </Text>
             </View>
             <View style={styles.footerDivider} />
             <View style={styles.footerItem}>
               <Text style={styles.footerLabel}>Minimum</Text>
               <Text style={styles.footerValue}>
-                {item.criticalStockLevel} {item.unit}
+                {product.criticalStockLevel} {product.unit}
               </Text>
             </View>
             <View style={styles.footerDivider} />
@@ -118,18 +125,8 @@ export default function CriticalStockPage() {
         </TouchableOpacity>
       );
     },
-    [getStockForProduct, handleProduct, handleStockIn]
+    [handleProduct, handleStockIn, isStaff]
   );
-
-  if (lowStockProducts.length === 0) {
-    return (
-      <EmptyState
-        icon={<CheckCircle size={36} color={Colors.success} />}
-        title="Tüm stoklar yeterli!"
-        subtitle="Kritik stok seviyesinin altında ürün bulunmuyor. Stok durumunuz sağlıklı görünüyor."
-      />
-    );
-  }
 
   if (isStaff) {
     return (
@@ -145,6 +142,16 @@ export default function CriticalStockPage() {
     );
   }
 
+  if (lowStockItems.length === 0) {
+    return (
+      <EmptyState
+        icon={<CheckCircle size={36} color={Colors.success} />}
+        title="Tüm stoklar yeterli!"
+        subtitle="Hiçbir depoda kritik stok seviyesinin altında ürün bulunmuyor."
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.summaryBanner}>
@@ -153,17 +160,17 @@ export default function CriticalStockPage() {
         </View>
         <View style={styles.summaryTextWrap}>
           <Text style={styles.summaryTitle}>
-            {lowStockProducts.length} ürün kritik seviyede
+            {lowStockItems.length} depo kritik seviyede
           </Text>
           <Text style={styles.summarySubtitle}>
-            Minimum stok seviyesinin altındaki ürünler
+            Minimum stok seviyesinin altındaki depo–ürün kayıtları
           </Text>
         </View>
       </View>
 
       <FlatList
-        data={lowStockProducts}
-        keyExtractor={(item) => item.id}
+        data={lowStockItems}
+        keyExtractor={(item) => `${item.product.id}-${item.warehouse.id}`}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -256,6 +263,7 @@ const styles = StyleSheet.create({
   },
   cardInfo: {
     flex: 1,
+    gap: 4,
   },
   productName: {
     fontSize: 15,
@@ -263,10 +271,20 @@ const styles = StyleSheet.create({
     color: Colors.text,
     letterSpacing: -0.2,
   },
-  barcode: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    marginTop: 2,
+  warehouseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primaryVeryLight,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  warehouseName: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: Colors.primary,
   },
   addBtn: {
     width: 40,

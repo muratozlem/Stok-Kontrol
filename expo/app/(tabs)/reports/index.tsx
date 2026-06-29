@@ -110,7 +110,7 @@ export default function ReportsPage() {
           warehouseId: w.id,
           warehouseName: w.name,
           quantity: qty,
-          isCritical: getStockForProduct(p.id) <= p.criticalStockLevel,
+          isCritical: qty <= p.criticalStockLevel,
         });
       }
     }

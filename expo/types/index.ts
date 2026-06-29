@@ -53,6 +53,12 @@ export interface DashboardStats {
   todayTransactions: number;
 }
 
+export interface LowStockWarehouseItem {
+  product: Product;
+  warehouse: Warehouse;
+  stock: number;
+}
+
 export type UserRole = 'super_admin' | 'admin' | 'chef' | 'staff';
 
 export interface User {

@@ -46,7 +46,7 @@ export default function DashboardPage() {
     getTodayTransactionCount,
     locations,
   } = useData();
-  const { currentUser } = useAuth();
+  const { currentUser, isStaff } = useAuth();
 
   const locationName = useMemo(() => {
     if (!currentUser?.locationId) return null;
@@ -252,7 +252,7 @@ export default function DashboardPage() {
             <View style={styles.alertTextWrap}>
               <Text style={styles.alertTitle}>Kritik Stok Uyarısı</Text>
               <Text style={styles.alertSubtitle}>
-                {lowStockProducts.length} ürün minimum seviyenin altında
+                {lowStockProducts.length} ürün, en az bir depoda kritik seviyede
               </Text>
             </View>
             <View style={styles.alertChevron}>
@@ -267,28 +267,32 @@ export default function DashboardPage() {
         </View>
 
         <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={handleStockIn}
-            activeOpacity={0.85}
-            testID="stock-in-btn"
-          >
-            <LinearGradient
-              colors={['#5DC85D', GREEN]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.actionBtnGradient}
-            >
-              <View style={styles.actionIconCircle}>
-                <ArrowDownLeft size={22} color={Colors.white} strokeWidth={2.6} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionBtnTitle}>Stok Girişi</Text>
-                <Text style={styles.actionBtnSubtitle}>Ürün ekle</Text>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-          <View style={styles.actionSpacer} />
+          {!isStaff && (
+            <>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleStockIn}
+                activeOpacity={0.85}
+                testID="stock-in-btn"
+              >
+                <LinearGradient
+                  colors={['#5DC85D', GREEN]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.actionBtnGradient}
+                >
+                  <View style={styles.actionIconCircle}>
+                    <ArrowDownLeft size={22} color={Colors.white} strokeWidth={2.6} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionBtnTitle}>Stok Girişi</Text>
+                    <Text style={styles.actionBtnSubtitle}>Ürün ekle</Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+              <View style={styles.actionSpacer} />
+            </>
+          )}
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={handleStockOut}

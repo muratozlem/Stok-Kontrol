@@ -31,6 +31,7 @@ export default function ProductDetailPage() {
   const {
     products,
     warehouses,
+    inventory,
     deleteProduct,
     getStockForProduct,
     getStockForProductInWarehouse,
@@ -47,7 +48,20 @@ export default function ProductDetailPage() {
     [product, getStockForProduct]
   );
 
-  const isCritical = product ? totalStock <= product.criticalStockLevel : false;
+  const productWarehouses = useMemo(() => {
+    if (!product) return [];
+    const warehouseIdsWithEntry = new Set(
+      inventory.filter(inv => inv.productId === product.id).map(inv => inv.warehouseId)
+    );
+    return warehouses.filter(w => warehouseIdsWithEntry.has(w.id));
+  }, [product, inventory, warehouses]);
+
+  const isCritical = useMemo(() => {
+    if (!product || product.criticalStockLevel <= 0) return false;
+    return productWarehouses.some(
+      w => getStockForProductInWarehouse(product.id, w.id) <= product.criticalStockLevel
+    );
+  }, [product, productWarehouses, getStockForProductInWarehouse]);
 
   const productTransactions = useMemo(
     () => (product ? getTransactionsForProduct(product.id).slice(0, 20) : []),
@@ -213,30 +227,34 @@ export default function ProductDetailPage() {
 
       <Text style={styles.sectionTitle}>Depo Bazlı Stok</Text>
       <View style={styles.warehouseStocks}>
-        {warehouses.map((w, i) => {
+        {productWarehouses.length === 0 && (
+          <Text style={styles.emptyText}>Henüz stok kaydı yok</Text>
+        )}
+        {productWarehouses.map((w, i) => {
           const qty = getStockForProductInWarehouse(product.id, w.id);
-          if (qty === 0) return null;
+          const whCritical = product.criticalStockLevel > 0 && qty <= product.criticalStockLevel;
           return (
             <View
               key={w.id}
               style={[
                 styles.whRow,
-                i === warehouses.length - 1 && styles.whRowLast,
+                i === productWarehouses.length - 1 && styles.whRowLast,
+                whCritical && styles.whRowCritical,
               ]}
             >
-              <View style={styles.whIconWrap}>
-                <WarehouseIcon size={16} color={Colors.primary} strokeWidth={2.3} />
+              <View style={[styles.whIconWrap, whCritical && styles.whIconWrapCritical]}>
+                {whCritical
+                  ? <AlertTriangle size={16} color={Colors.danger} strokeWidth={2.3} />
+                  : <WarehouseIcon size={16} color={Colors.primary} strokeWidth={2.3} />
+                }
               </View>
-              <Text style={styles.whName}>{w.name}</Text>
-              <Text style={styles.whQty}>
+              <Text style={[styles.whName, whCritical && styles.whNameCritical]}>{w.name}</Text>
+              <Text style={[styles.whQty, whCritical && styles.whQtyCritical]}>
                 {qty} {product.unit}
               </Text>
             </View>
           );
         })}
-        {warehouses.every(
-          (w) => getStockForProductInWarehouse(product.id, w.id) === 0
-        ) && <Text style={styles.emptyText}>Henüz stok kaydı yok</Text>}
       </View>
 
       <Text style={styles.sectionTitle}>Son İşlemler</Text>
@@ -493,6 +511,9 @@ const styles = StyleSheet.create({
   whRowLast: {
     borderBottomWidth: 0,
   },
+  whRowCritical: {
+    backgroundColor: Colors.dangerLight,
+  },
   whIconWrap: {
     width: 32,
     height: 32,
@@ -501,17 +522,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  whIconWrapCritical: {
+    backgroundColor: '#FFD6D0',
+  },
   whName: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600' as const,
     color: Colors.text,
   },
+  whNameCritical: {
+    color: Colors.danger,
+  },
   whQty: {
     fontSize: 15,
     fontWeight: '800' as const,
     color: Colors.primary,
     letterSpacing: -0.2,
+  },
+  whQtyCritical: {
+    color: Colors.danger,
   },
   emptyCard: {
     backgroundColor: Colors.white,

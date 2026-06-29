@@ -2,7 +2,7 @@ import React, { useEffect, useCallback, useMemo } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
-import { Product, Warehouse, InventoryItem, Transaction, TransactionType, Location } from '@/types';
+import { Product, Warehouse, InventoryItem, Transaction, TransactionType, Location, LowStockWarehouseItem } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
 import { maybeSendCriticalStockAlert } from '@/utils/criticalStockAlert';
 import { useAuth } from '@/providers/AuthProvider';
@@ -249,7 +249,9 @@ export const [DataProvider, useData] = createContextHook(() => {
     const productIdsInLocation = new Set(
       inventory.filter(inv => warehouseIds.has(inv.warehouseId)).map(inv => inv.productId)
     );
-    return allProducts.filter(p => productIdsInLocation.has(p.id));
+    return allProducts.filter(
+      p => productIdsInLocation.has(p.id) || p.locationId === userLocationId
+    );
   }, [allProducts, isSuperAdmin, userLocationId, inventory, warehouseIds]);
 
   const transactions = useMemo(() => {
@@ -391,6 +393,7 @@ export const [DataProvider, useData] = createContextHook(() => {
 
   const deleteWarehouseMutation = useMutation({
     mutationFn: async (id: string) => {
+      await supabase.from('transactions').delete().eq('warehouse_id', id);
       await supabase.from('inventory').delete().eq('warehouse_id', id);
       const { error } = await supabase.from('warehouses').delete().eq('id', id);
       if (error) throw error;
@@ -398,6 +401,7 @@ export const [DataProvider, useData] = createContextHook(() => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['warehouses'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
     },
   });
 
@@ -496,9 +500,31 @@ export const [DataProvider, useData] = createContextHook(() => {
     return transactions.filter(t => t.productId === productId);
   }, [transactions]);
 
+  const getLowStockWarehouseItems = useCallback((): LowStockWarehouseItem[] => {
+    const items: LowStockWarehouseItem[] = [];
+    for (const p of products) {
+      if (p.criticalStockLevel <= 0) continue;
+      const productInv = inventory.filter(
+        inv => inv.productId === p.id && warehouseIds.has(inv.warehouseId)
+      );
+      for (const inv of productInv) {
+        if (inv.quantity <= p.criticalStockLevel) {
+          const wh = warehouses.find(w => w.id === inv.warehouseId);
+          if (wh) items.push({ product: p, warehouse: wh, stock: inv.quantity });
+        }
+      }
+    }
+    return items;
+  }, [products, inventory, warehouses, warehouseIds]);
+
   const getLowStockProducts = useCallback((): Product[] => {
-    return products.filter(p => getStockForProduct(p.id) <= p.criticalStockLevel);
-  }, [products, getStockForProduct]);
+    return products.filter(p =>
+      p.criticalStockLevel > 0 &&
+      inventory.some(
+        inv => inv.productId === p.id && warehouseIds.has(inv.warehouseId) && inv.quantity <= p.criticalStockLevel
+      )
+    );
+  }, [products, inventory, warehouseIds]);
 
   const getTodayTransactionCount = useCallback((): number => {
     const today = new Date().toISOString().split('T')[0];
@@ -525,7 +551,7 @@ export const [DataProvider, useData] = createContextHook(() => {
     addWarehouse, updateWarehouse, deleteWarehouse,
     getStockForProduct, getStockForProductInWarehouse, getInventoryForWarehouse,
     addStockTransaction, getTransactionsForProduct,
-    getLowStockProducts, getTodayTransactionCount, getProductByBarcode,
+    getLowStockProducts, getLowStockWarehouseItems, getTodayTransactionCount, getProductByBarcode,
     clearAllData,
   };
 });
