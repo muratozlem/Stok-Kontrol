@@ -237,17 +237,20 @@ export const [DataProvider, useData] = createContextHook(() => {
 
   const userLocationId = currentUser?.locationId ?? null;
 
-  const products = useMemo(() => {
-    if (isSuperAdmin || !userLocationId) return allProducts;
-    return allProducts.filter(p => !p.locationId || p.locationId === userLocationId);
-  }, [allProducts, isSuperAdmin, userLocationId]);
-
   const warehouses = useMemo(() => {
     if (isSuperAdmin || !userLocationId) return allWarehouses;
-    return allWarehouses.filter(w => !w.locationId || w.locationId === userLocationId);
+    return allWarehouses.filter(w => w.locationId === userLocationId);
   }, [allWarehouses, isSuperAdmin, userLocationId]);
 
   const warehouseIds = useMemo(() => new Set(warehouses.map(w => w.id)), [warehouses]);
+
+  const products = useMemo(() => {
+    if (isSuperAdmin || !userLocationId) return allProducts;
+    const productIdsInLocation = new Set(
+      inventory.filter(inv => warehouseIds.has(inv.warehouseId)).map(inv => inv.productId)
+    );
+    return allProducts.filter(p => productIdsInLocation.has(p.id));
+  }, [allProducts, isSuperAdmin, userLocationId, inventory, warehouseIds]);
 
   const transactions = useMemo(() => {
     if (isSuperAdmin || !userLocationId) return allTransactions;
