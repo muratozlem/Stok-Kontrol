@@ -11,13 +11,20 @@ export interface CriticalProductInfo {
   locationId?: string | null;
 }
 
-async function getLastAlertSentAt(productId: string): Promise<string | null> {
+async function getLastAlertSentAt(productId: string, locationId: string | null | undefined): Promise<string | null> {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from('stock_alerts')
       .select('last_sent_at')
-      .eq('product_id', productId)
-      .maybeSingle();
+      .eq('product_id', productId);
+
+    if (locationId) {
+      query = query.eq('location_id', locationId);
+    } else {
+      query = query.is('location_id', null);
+    }
+
+    const { data, error } = await query.maybeSingle();
     if (error) {
       console.log('[CriticalAlert] stock_alerts sorgu hatası:', error.message);
       return null;
@@ -29,13 +36,17 @@ async function getLastAlertSentAt(productId: string): Promise<string | null> {
   }
 }
 
-async function upsertAlertTimestamp(productId: string): Promise<void> {
+async function upsertAlertTimestamp(productId: string, locationId: string | null | undefined): Promise<void> {
   try {
     const { error } = await supabase
       .from('stock_alerts')
       .upsert(
-        { product_id: productId, last_sent_at: new Date().toISOString() },
-        { onConflict: 'product_id' }
+        {
+          product_id: productId,
+          location_id: locationId ?? null,
+          last_sent_at: new Date().toISOString(),
+        },
+        { onConflict: 'product_id,location_id' }
       );
     if (error) console.log('[CriticalAlert] stock_alerts upsert hatası:', error.message);
   } catch (e) {
@@ -96,9 +107,10 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
   if (!isSupabaseConfigured) return;
   if (info.totalStock > info.criticalLevel) return;
 
-  console.log('[CriticalAlert] Kritik stok:', info.productName, '| Stok:', info.totalStock, '| Kritik:', info.criticalLevel);
+  const locationLabel = info.locationId ? ` (lokasyon: ${info.locationId})` : '';
+  console.log('[CriticalAlert] Kritik stok:', info.productName, '| Stok:', info.totalStock, '| Kritik:', info.criticalLevel, locationLabel);
 
-  const lastSent = await getLastAlertSentAt(info.productId);
+  const lastSent = await getLastAlertSentAt(info.productId, info.locationId);
   if (lastSent) {
     const elapsed = Date.now() - new Date(lastSent).getTime();
     if (elapsed < ALERT_COOLDOWN_MS) {
@@ -109,5 +121,5 @@ export async function maybeSendCriticalStockAlert(info: CriticalProductInfo): Pr
   }
 
   const ok = await sendViaEdgeFunction(info);
-  if (ok) await upsertAlertTimestamp(info.productId);
+  if (ok) await upsertAlertTimestamp(info.productId, info.locationId);
 }
