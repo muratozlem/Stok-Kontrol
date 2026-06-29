@@ -263,8 +263,20 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
                       </select>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">
-                    {p.location_id ? locMap[p.location_id] ?? '—' : '—'}
+                  <td className="px-4 py-3">
+                    {p.role === 'super_admin' ? (
+                      <span className="text-xs text-slate-600">—</span>
+                    ) : (
+                      <select
+                        defaultValue={p.location_id ?? ''}
+                        disabled={!!loading}
+                        onChange={e => handleRoleChange(p.id, p.role, e.target.value)}
+                        className="bg-slate-900 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none focus:border-sky-500 disabled:opacity-50 max-w-[160px]"
+                      >
+                        <option value="">— Seçiniz —</option>
+                        {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      </select>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-block text-xs rounded-full px-2 py-0.5 border ${

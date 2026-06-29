@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       'unknown';
 
     const body = await req.json();
-    const { email, password, bootstrap_token } = body;
+    const { email, password, bootstrap_token, location_id } = body;
 
     if (!email || !password) {
       return new Response(JSON.stringify({ error: 'E-posta ve şifre gerekli' }), {
@@ -161,6 +161,18 @@ Deno.serve(async (req) => {
     };
     if (clientIP !== 'unknown') {
       profileRow.registered_from_ip = clientIP;
+    }
+    // Only non-first users (regular registrants) can specify a location
+    if (!isFirst && location_id && typeof location_id === 'string' && /^[0-9a-f-]{36}$/i.test(location_id)) {
+      // Verify the location exists before assigning
+      const { data: locCheck } = await adminClient
+        .from('locations')
+        .select('id')
+        .eq('id', location_id)
+        .maybeSingle();
+      if (locCheck) {
+        profileRow.location_id = location_id;
+      }
     }
 
     const { error: profileError } = await adminClient.from('profiles').insert(profileRow);

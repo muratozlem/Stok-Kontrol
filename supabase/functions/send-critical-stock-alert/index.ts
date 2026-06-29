@@ -109,7 +109,7 @@ Deno.serve(async (req: Request) => {
 
     const { data: callerProfile } = await adminClient
       .from('profiles')
-      .select('role, status')
+      .select('role, status, location_id')
       .eq('id', user.id)
       .single();
 
@@ -120,22 +120,50 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { productId, productName, unit, totalStock, criticalLevel, locationId } = body;
+    const { productId, totalStock } = body;
 
-    if (!productId || !productName) {
-      return new Response(JSON.stringify({ error: 'productId ve productName zorunludur' }), {
+    if (!productId) {
+      return new Response(JSON.stringify({ error: 'productId zorunludur' }), {
+        status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (typeof totalStock !== 'number') {
+      return new Response(JSON.stringify({ error: 'totalStock sayısal bir değer olmalıdır' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
     const supabase = adminClient;
 
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id, name, unit, critical_stock_level, location_id')
+      .eq('id', productId)
+      .single();
+
+    if (productError || !product) {
+      return new Response(JSON.stringify({ error: 'Ürün bulunamadı' }), {
+        status: 404, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (callerProfile.role !== 'super_admin') {
+      if (product.location_id !== callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Bu ürün için yetkiniz yok' }), {
+          status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    const effectiveLocationId: string | null = product.location_id ?? null;
+
     let locationName: string | undefined;
-    if (locationId) {
+    if (effectiveLocationId) {
       const { data: locRow } = await supabase
         .from('locations')
         .select('name')
-        .eq('id', locationId)
+        .eq('id', effectiveLocationId)
         .maybeSingle();
       locationName = (locRow as { name?: string } | null)?.name;
     }
@@ -145,8 +173,8 @@ Deno.serve(async (req: Request) => {
       .select('email')
       .eq('status', 'approved');
 
-    if (locationId) {
-      profileQuery = profileQuery.or(`role.eq.super_admin,and(role.eq.admin,location_id.eq.${locationId})`);
+    if (effectiveLocationId) {
+      profileQuery = profileQuery.or(`role.eq.super_admin,and(role.eq.admin,location_id.eq.${effectiveLocationId})`);
     } else {
       profileQuery = profileQuery.in('role', ['super_admin', 'admin']);
     }
@@ -163,15 +191,15 @@ Deno.serve(async (req: Request) => {
       .filter(Boolean);
 
     if (recipients.length === 0) {
-      console.log('[send-critical-stock-alert] Alıcı yok | lokasyon:', locationId ?? '(yok)');
+      console.log('[send-critical-stock-alert] Alıcı yok | lokasyon:', effectiveLocationId ?? '(yok)');
       return new Response(JSON.stringify({ ok: true, recipientCount: 0, message: 'Alıcı bulunamadı' }), { headers: getCorsHeaders(req) });
     }
 
     const htmlContent = buildEmailHtml({
-      productName,
-      unit: unit ?? '',
-      totalStock: totalStock ?? 0,
-      criticalLevel: criticalLevel ?? 0,
+      productName: product.name,
+      unit: product.unit ?? '',
+      totalStock,
+      criticalLevel: product.critical_stock_level ?? 0,
       locationName,
     });
 
@@ -179,7 +207,7 @@ Deno.serve(async (req: Request) => {
     const emailPayload = {
       from: 'Stok Kontrol <kritik@stokkontrol.tr>',
       to: recipients,
-      subject: `⚠️ Kritik Stok${locationLabel}: ${productName}`,
+      subject: `⚠️ Kritik Stok${locationLabel}: ${product.name}`,
       html: htmlContent,
     };
 

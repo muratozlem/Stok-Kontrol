@@ -5,12 +5,13 @@ WORKSPACE="/home/runner/workspace"
 MIRROR="$WORKSPACE/.github-mirror"
 GITHUB_REPO="https://github.com/muratozlem/Stok-Kontrol.git"
 
-if [ -z "${GITHUB_PERSONAL_ACCESS_TOKEN:-}" ]; then
-  echo "ERROR: GITHUB_PERSONAL_ACCESS_TOKEN environment variable is not set." >&2
+GITHUB_TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN1:-${GITHUB_PERSONAL_ACCESS_TOKEN:-}}"
+if [ -z "$GITHUB_TOKEN" ]; then
+  echo "ERROR: Set GITHUB_PERSONAL_ACCESS_TOKEN1 (or GITHUB_PERSONAL_ACCESS_TOKEN) before running this script." >&2
   exit 1
 fi
 
-PUSH_URL="https://${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/muratozlem/Stok-Kontrol.git"
+PUSH_URL="https://${GITHUB_TOKEN}@github.com/muratozlem/Stok-Kontrol.git"
 
 # Reinitialize the bare mirror repo if it is missing or not a valid git repo.
 if ! git -C "$MIRROR" rev-parse --git-dir > /dev/null 2>&1; then

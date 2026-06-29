@@ -73,7 +73,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, [loadProfile]);
 
   const registerMutation = useMutation({
-    mutationFn: async ({ email, password, bootstrapToken }: { email: string; password: string; bootstrapToken?: string }) => {
+    mutationFn: async ({ email, password, bootstrapToken, locationId }: { email: string; password: string; bootstrapToken?: string; locationId?: string }) => {
       if (!isSupabaseConfigured) {
         throw new Error('Supabase bağlantısı yapılandırılmamış');
       }
@@ -92,6 +92,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       const requestBody: Record<string, string> = { email: cleanEmail, password };
       if (bootstrapToken) requestBody.bootstrap_token = bootstrapToken;
+      if (locationId) requestBody.location_id = locationId;
 
       const { data, error } = await supabase.functions.invoke('register-user', {
         body: requestBody,
@@ -189,8 +190,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     console.log('[Auth] Çıkış yapıldı');
   }, []);
 
-  const register = useCallback((email: string, password: string, bootstrapToken?: string) => {
-    return registerMutation.mutateAsync({ email, password, bootstrapToken });
+  const register = useCallback((email: string, password: string, bootstrapToken?: string, locationId?: string) => {
+    return registerMutation.mutateAsync({ email, password, bootstrapToken, locationId });
   }, [registerMutation]);
 
   const login = useCallback((email: string, password: string) => {

@@ -1,3 +1,4 @@
+'use client';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -11,17 +12,25 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
+  Modal,
+  FlatList,
+  Pressable,
 } from 'react-native';
 import { router, Stack } from 'expo-router';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle2, KeyRound } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, CheckCircle2, KeyRound, MapPin, ChevronDown, X } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useAuth } from '@/providers/AuthProvider';
+import { supabase, isSupabaseConfigured } from '@/utils/supabase';
 
 const BLUE   = '#3ABEDB';
 const GREEN  = '#7DC242';
 const YELLOW = '#F5C225';
 const ORANGE = '#F07D28';
 
+interface Location {
+  id: string;
+  name: string;
+}
 
 export default function RegisterScreen() {
   const { register, isRegistering, registerError, resetRegisterError } = useAuth();
@@ -34,6 +43,11 @@ export default function RegisterScreen() {
   const [showConfirm, setShowConfirm] = useState<boolean>(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
+  const [locationId, setLocationId] = useState<string>('');
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -51,11 +65,25 @@ export default function RegisterScreen() {
   }, []);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) { setLocationsLoading(false); return; }
+    supabase
+      .from('locations')
+      .select('id, name')
+      .order('name')
+      .then(({ data, error }) => {
+        if (!error && data) setLocations(data as Location[]);
+        setLocationsLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
     if (registerError) {
       setLocalError(registerError);
       resetRegisterError();
     }
   }, [registerError]);
+
+  const selectedLocation = locations.find(l => l.id === locationId);
 
   const handleRegister = async () => {
     setLocalError(null);
@@ -70,12 +98,16 @@ export default function RegisterScreen() {
     if (showBootstrapField && !bootstrapToken.trim()) {
       setLocalError('Kurulum tokeni boş bırakılamaz'); return;
     }
+    if (!showBootstrapField && !locationId) {
+      setLocalError('Lütfen çalıştığınız lokasyonu seçiniz'); return;
+    }
     try {
       const token = showBootstrapField ? bootstrapToken.trim() : undefined;
-      const user = await register(cleanEmail, password, token);
+      const locId = showBootstrapField ? undefined : locationId;
+      const user = await register(cleanEmail, password, token, locId);
       if (user.status === 'pending') {
         setPendingMessage('Kayıt talebiniz alındı. Hesabınız admin tarafından onaylandıktan sonra giriş yapabilirsiniz.');
-        setEmail(''); setPassword(''); setConfirmPassword(''); setBootstrapToken('');
+        setEmail(''); setPassword(''); setConfirmPassword(''); setBootstrapToken(''); setLocationId('');
       }
     } catch (e: unknown) {
       const err = e as Error & { bootstrapRequired?: boolean };
@@ -183,7 +215,7 @@ export default function RegisterScreen() {
                     onChangeText={setConfirmPassword}
                     secureTextEntry={!showConfirm}
                     autoCapitalize="none"
-                    returnKeyType={showBootstrapField ? 'next' : 'done'}
+                    returnKeyType="done"
                     onSubmitEditing={handleRegister}
                     testID="register-confirm"
                   />
@@ -191,6 +223,26 @@ export default function RegisterScreen() {
                     {showConfirm ? <EyeOff size={18} color={Colors.textMuted} /> : <Eye size={18} color={Colors.textMuted} />}
                   </TouchableOpacity>
                 </View>
+
+                {!showBootstrapField && (
+                  <TouchableOpacity
+                    style={[styles.inputWrapper, styles.locationButton, locationId ? styles.locationSelected : null]}
+                    onPress={() => setShowLocationPicker(true)}
+                    activeOpacity={0.7}
+                    testID="register-location"
+                  >
+                    <View style={[styles.inputAccent, { backgroundColor: YELLOW }]} />
+                    <MapPin size={18} color={locationId ? YELLOW : Colors.textMuted} style={styles.inputIcon} />
+                    <Text style={[styles.locationButtonText, locationId ? styles.locationButtonTextSelected : null]}>
+                      {locationsLoading
+                        ? 'Lokasyonlar yükleniyor...'
+                        : selectedLocation
+                          ? selectedLocation.name
+                          : 'Lokasyon seçiniz *'}
+                    </Text>
+                    <ChevronDown size={16} color={locationId ? YELLOW : Colors.textMuted} />
+                  </TouchableOpacity>
+                )}
 
                 {showBootstrapField && (
                   <View style={styles.inputWrapper}>
@@ -219,7 +271,7 @@ export default function RegisterScreen() {
                   <View style={[styles.infoNoteDot, { backgroundColor: YELLOW }]} />
                 </View>
                 <Text style={styles.infoNoteText}>
-                  Üyelik talepleri admin onayı gerektirir. Onaylandıktan sonra giriş yapabilirsiniz.
+                  Üyelik talepleri admin onayı gerektirir. Seçtiğiniz lokasyonun admini talebinizi görecek ve onaylayacaktır.
                 </Text>
               </View>
 
@@ -250,6 +302,50 @@ export default function RegisterScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </View>
+
+      <Modal
+        visible={showLocationPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowLocationPicker(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowLocationPicker(false)}>
+          <Pressable style={styles.modalSheet} onPress={e => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Lokasyon Seçin</Text>
+              <TouchableOpacity onPress={() => setShowLocationPicker(false)} style={styles.modalClose}>
+                <X size={20} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalHandle} />
+            {locations.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <MapPin size={32} color={Colors.textMuted} />
+                <Text style={styles.modalEmptyText}>Henüz lokasyon tanımlanmamış</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={locations}
+                keyExtractor={item => item.id}
+                contentContainerStyle={styles.modalList}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.locationItem, item.id === locationId && styles.locationItemSelected]}
+                    onPress={() => { setLocationId(item.id); setShowLocationPicker(false); setLocalError(null); }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.locationItemDot, { backgroundColor: item.id === locationId ? YELLOW : Colors.border }]} />
+                    <Text style={[styles.locationItemText, item.id === locationId && styles.locationItemTextSelected]}>
+                      {item.name}
+                    </Text>
+                    {item.id === locationId && <CheckCircle2 size={18} color={YELLOW} />}
+                  </TouchableOpacity>
+                )}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -287,7 +383,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.12)',
   },
   appName: { fontSize: 22, fontWeight: '800' as const, color: '#FFFFFF', letterSpacing: 0.3 },
-  appTagline: { fontSize: 13, fontWeight: '500' as const, color: 'rgba(255,255,255,0.6)', marginTop: 3 },
   keyboardView: { flex: 1 },
   scrollContent: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
   formContainer: {
@@ -341,6 +436,10 @@ const styles = StyleSheet.create({
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: Colors.text, height: 52 },
   eyeButton: { padding: 6 },
+  locationButton: { justifyContent: 'space-between' },
+  locationSelected: { borderColor: YELLOW, backgroundColor: '#FFFBEA' },
+  locationButtonText: { flex: 1, fontSize: 15, color: Colors.textMuted },
+  locationButtonTextSelected: { color: Colors.text, fontWeight: '500' as const },
   infoNote: {
     backgroundColor: '#F0FBFE',
     borderRadius: 10,
@@ -374,4 +473,52 @@ const styles = StyleSheet.create({
   loginLink: { marginTop: 18, alignItems: 'center' },
   loginLinkText: { fontSize: 14, color: Colors.textSecondary },
   loginLinkBold: { color: '#1A1D2E', fontWeight: '700' as const },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
+    maxHeight: '70%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: { fontSize: 17, fontWeight: '700' as const, color: Colors.text },
+  modalClose: { padding: 4 },
+  modalList: { paddingHorizontal: 16, paddingVertical: 8 },
+  modalEmpty: { alignItems: 'center', paddingVertical: 40, gap: 12 },
+  modalEmptyText: { fontSize: 14, color: Colors.textSecondary },
+  locationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
+  locationItemSelected: { backgroundColor: '#FFFBEA' },
+  locationItemDot: { width: 10, height: 10, borderRadius: 5 },
+  locationItemText: { flex: 1, fontSize: 15, color: Colors.text },
+  locationItemTextSelected: { fontWeight: '600' as const, color: '#7A5C00' },
 });
