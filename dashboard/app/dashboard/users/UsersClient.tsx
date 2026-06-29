@@ -107,12 +107,25 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
     }
   }
 
-  async function handleApprove(userId: string) {
+  async function handleApprove(userId: string, currentRole: string, currentLocationId: string | null) {
     setLoading(userId)
     try {
       const supabase = createClient()
-      const { error } = await supabase.from('profiles').update({ status: 'approved' }).eq('id', userId)
-      if (error) throw error
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Oturum bulunamadı')
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/update-user-role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          targetUserId: userId,
+          newRole: currentRole,
+          newLocationId: currentLocationId ?? null,
+          newStatus: 'approved',
+        }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Onaylanamadı') }
       refresh()
     } catch (err: any) {
       alert(err.message)
@@ -132,7 +145,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
       const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/update-user-role`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ target_user_id: userId, role, location_id: locationId || null }),
+        body: JSON.stringify({ targetUserId: userId, newRole: role, newLocationId: locationId || null }),
       })
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Güncellenemedi') }
       refresh()
@@ -266,7 +279,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
                     <div className="flex items-center justify-end gap-2">
                       {p.status === 'pending' && (
                         <button
-                          onClick={() => handleApprove(p.id)}
+                          onClick={() => handleApprove(p.id, p.role, p.location_id ?? null)}
                           disabled={!!loading}
                           className="flex items-center gap-1 text-xs bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-2 py-1 rounded-lg transition-colors disabled:opacity-50"
                         >

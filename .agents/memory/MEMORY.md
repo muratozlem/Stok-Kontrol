@@ -10,3 +10,6 @@
 - [Supabase CLI unavailable](build-pattern.md) — No Supabase CLI in environment; deploy edge functions via Management API PATCH/POST with jq for JSON encoding; apply SQL via `/database/query` endpoint.
 - [Supabase Edge Deploy](supabase-edge-deploy.md) — PATCH API strips first 4 bytes of body; prepend `/**/`; use `npm:@supabase/supabase-js@2` not `esm.sh` (esm.sh → BOOT_ERROR).
 - [Supabase data deletion](supabase-delete-method.md) — Management API /database/query returns wrong counts under RLS; always use REST API + service role key for deletes and verification.
+- [Transaction Immutability](transaction-immutability.md) — Transactions are INSERT+DELETE only; UPDATE policy dropped + BEFORE UPDATE trigger blocks any tampering; inventory trigger fires on INSERT only so UPDATE would silently corrupt stock counts.
+- [Dashboard Edge Fn Params](dashboard-edge-fn-params.md) — update-user-role edge function expects camelCase: targetUserId/newRole/newLocationId/newStatus. handleApprove must go through edge function (not direct profiles.update) because pending users have NULL location_id and bypass RLS USING clause.
+- [stock_alerts Chef Access](stock-alerts-chef.md) — stock_alerts policy must be is_admin_or_chef() not is_admin(). Chef-only SELECT/upsert fails silently → 24h cooldown bypassed → email spam DoS. Fixed in schema v10.
