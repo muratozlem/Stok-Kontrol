@@ -2,13 +2,14 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
-import { BarChart3, MapPin, Warehouse, Package, Users, FileText, LogOut, ChevronRight } from 'lucide-react'
+import { BarChart3, MapPin, Warehouse, Package, Users, FileText, LogOut, ChevronRight, ArrowLeftRight } from 'lucide-react'
 
 const nav = [
   { href: '/dashboard', label: 'Genel Bakış', icon: BarChart3 },
   { href: '/dashboard/locations', label: 'Lokasyonlar', icon: MapPin },
   { href: '/dashboard/warehouses', label: 'Depolar', icon: Warehouse },
   { href: '/dashboard/products', label: 'Ürünler & Stok', icon: Package },
+  { href: '/dashboard/transactions', label: 'Stok İşlemleri', icon: ArrowLeftRight },
   { href: '/dashboard/users', label: 'Kullanıcılar', icon: Users },
   { href: '/dashboard/reports', label: 'Raporlar', icon: FileText },
 ]
