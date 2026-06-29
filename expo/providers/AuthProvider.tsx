@@ -202,7 +202,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const isAdmin = role === 'super_admin' || role === 'admin';
   const isChef = role === 'chef';
   const isStaff = role === 'staff';
-  const canManageUsers = isSuperAdmin || role === 'admin' || role === 'chef';
+  const canManageUsers = isSuperAdmin || role === 'admin';
 
   const isPending =
     currentUser !== null &&

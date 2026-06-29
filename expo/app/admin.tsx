@@ -22,14 +22,9 @@ import {
   Crown,
   UserCheck,
   AlertTriangle,
-  KeyRound,
-  Eye,
-  EyeOff,
   MapPin,
   Plus,
-  ChevronDown,
   UserCog,
-  Warehouse,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -38,7 +33,7 @@ import { useData } from '@/providers/DataProvider';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
 import type { UserRole, Location } from '@/types';
 
-type TabType = 'locations' | 'pending' | 'users' | 'reset' | 'danger';
+type TabType = 'locations' | 'pending' | 'users' | 'danger';
 
 interface ProfileRow {
   id: string;
@@ -50,12 +45,6 @@ interface ProfileRow {
   created_at: string;
 }
 
-interface ResetRequest {
-  id: string;
-  email: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-}
 
 const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: 'Süper Admin',
@@ -95,19 +84,9 @@ async function fetchAllProfiles(): Promise<ProfileRow[]> {
   return (data ?? []) as ProfileRow[];
 }
 
-async function fetchResetRequests(): Promise<ResetRequest[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase
-    .from('password_reset_requests')
-    .select('*')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false });
-  if (error) { console.log('[Admin] fetchResetRequests error:', error.message); return []; }
-  return (data ?? []) as ResetRequest[];
-}
 
 export default function AdminScreen() {
-  const { currentUser, isSuperAdmin, isAdmin, isChef, canManageUsers } = useAuth();
+  const { currentUser, isSuperAdmin, isAdmin, canManageUsers } = useAuth();
   const { clearAllData, locations, addLocation, deleteLocation } = useData();
   const queryClient = useQueryClient();
 
@@ -117,13 +96,6 @@ export default function AdminScreen() {
   const profilesQuery = useQuery({
     queryKey: ['admin-profiles'],
     queryFn: fetchAllProfiles,
-    refetchOnWindowFocus: true,
-    staleTime: 0,
-  });
-
-  const resetRequestsQuery = useQuery({
-    queryKey: ['admin-reset-requests'],
-    queryFn: fetchResetRequests,
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
@@ -139,8 +111,6 @@ export default function AdminScreen() {
     if (!myLoc) return approved;
     return approved.filter(p => p.location_id === myLoc);
   }, [allProfiles, isSuperAdmin, currentUser]);
-
-  const resetRequests = resetRequestsQuery.data ?? [];
 
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'approved' | 'rejected' }) => {
@@ -173,29 +143,6 @@ export default function AdminScreen() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-profiles'] }); },
   });
 
-  const approveResetMutation = useMutation({
-    mutationFn: async ({ request, newPass }: { request: ResetRequest; newPass: string }) => {
-      const { data: profile, error: profileErr } = await supabase
-        .from('profiles').select('id').eq('email', request.email).maybeSingle();
-      if (profileErr || !profile) throw new Error('Kullanıcı bulunamadı');
-      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
-        body: { requestId: request.id, targetUserId: profile.id, newPassword: newPass },
-      });
-      if (error) throw new Error(error.message ?? 'Şifre güncellenemedi');
-      if (data?.error) throw new Error(data.error);
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-reset-requests'] }); },
-  });
-
-  const rejectResetMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('password_reset_requests').update({ status: 'rejected' }).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['admin-reset-requests'] }); },
-  });
-
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [clearAllLoading, setClearAllLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -213,12 +160,10 @@ export default function AdminScreen() {
     }
   }, [clearAllData]);
 
-  const isRefreshing = (tab === 'pending' || tab === 'users')
-    ? profilesQuery.isFetching : tab === 'reset' ? resetRequestsQuery.isFetching : false;
+  const isRefreshing = (tab === 'pending' || tab === 'users') ? profilesQuery.isFetching : false;
 
   const handleRefresh = () => {
     if (tab === 'pending' || tab === 'users') profilesQuery.refetch();
-    else if (tab === 'reset') resetRequestsQuery.refetch();
   };
 
   if (!canManageUsers) {
@@ -238,16 +183,13 @@ export default function AdminScreen() {
   }
 
   const tabs: TabType[] = isSuperAdmin
-    ? ['locations', 'pending', 'users', 'reset', 'danger']
-    : isAdmin
-    ? ['pending', 'users', 'reset']
-    : ['users'];
+    ? ['locations', 'pending', 'users', 'danger']
+    : ['pending', 'users'];
 
   const tabLabels: Record<TabType, string> = {
     locations: 'Lokasyonlar',
     pending: `Üyelik${pendingUsers.length > 0 ? ` (${pendingUsers.length})` : ''}`,
-    users: `Kullanıcılar`,
-    reset: `Şifre${resetRequests.length > 0 ? ` (${resetRequests.length})` : ''}`,
+    users: 'Kullanıcılar',
     danger: 'Tehlike',
   };
 
@@ -268,7 +210,7 @@ export default function AdminScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Yönetim Konsolu</Text>
             <Text style={styles.headerSubtitle}>
-              {isSuperAdmin ? 'Tüm Türkiye — Sınırsız Erişim' : isAdmin ? 'İdari İşler — Kendi Lokasyonu' : 'Şef — Kendi Lokasyonu'}
+              {isSuperAdmin ? 'Tüm Türkiye — Sınırsız Erişim' : 'İdari İşler — Kendi Lokasyonu'}
             </Text>
           </View>
           <RoleBadge role={currentUser?.role ?? 'staff'} />
@@ -288,13 +230,6 @@ export default function AdminScreen() {
             </View>
             <Text style={styles.statValue}>{activeUsers.length}</Text>
             <Text style={styles.statLabel}>Aktif</Text>
-          </View>
-          <View style={styles.statBox}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#FFF3E0' }]}>
-              <KeyRound size={16} color="#F07D28" strokeWidth={2.4} />
-            </View>
-            <Text style={styles.statValue}>{resetRequests.length}</Text>
-            <Text style={styles.statLabel}>Şifre</Text>
           </View>
           <View style={styles.statBox}>
             <View style={[styles.statIconWrap, { backgroundColor: Colors.primaryVeryLight }]}>
@@ -405,35 +340,6 @@ export default function AdminScreen() {
                   }}
                   onCancelDelete={() => setConfirmDeleteId(null)}
                   loading={updateRoleMutation.isPending || (deleteUserMutation.isPending && confirmDeleteId === u.id)}
-                />
-              ))}
-            </View>
-          )
-        )}
-
-        {tab === 'reset' && (
-          resetRequestsQuery.isLoading ? (
-            <View style={styles.loadingBox}><ActivityIndicator color="#F07D28" /></View>
-          ) : resetRequests.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <KeyRound size={32} color={Colors.textMuted} />
-              <Text style={styles.emptyTitle}>Bekleyen şifre talebi yok</Text>
-            </View>
-          ) : (
-            <View style={styles.list}>
-              {resetRequests.map((req) => (
-                <ResetRequestCard
-                  key={req.id}
-                  request={req}
-                  onApprove={(newPass) => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    approveResetMutation.mutate({ request: req, newPass });
-                  }}
-                  onReject={() => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-                    rejectResetMutation.mutate(req.id);
-                  }}
-                  loading={approveResetMutation.isPending || rejectResetMutation.isPending}
                 />
               ))}
             </View>
@@ -834,8 +740,7 @@ function UserCard({
 
   const canEdit = !isSelf && (
     callerRole === 'super_admin' ||
-    (callerRole === 'admin' && ['chef', 'staff'].includes(user.role)) ||
-    (callerRole === 'chef' && user.role === 'staff')
+    (callerRole === 'admin' && ['chef', 'staff'].includes(user.role))
   );
   const canDelete = callerRole === 'super_admin' && !isSelf;
 
@@ -970,138 +875,6 @@ function UserCard({
               )}
             </TouchableOpacity>
           </View>
-        </View>
-      )}
-    </View>
-  );
-}
-
-function ResetRequestCard({
-  request,
-  onApprove,
-  onReject,
-  loading,
-}: {
-  request: ResetRequest;
-  onApprove: (newPassword: string) => void;
-  onReject: () => void;
-  loading: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
-  const [passError, setPassError] = useState('');
-  const [confirmReject, setConfirmReject] = useState(false);
-
-  const date = new Date(request.created_at).toLocaleDateString('tr-TR', {
-    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-
-  const handleApprovePress = () => {
-    setPassError('');
-    if (!newPassword || newPassword.length < 6) {
-      setPassError('Şifre en az 6 karakter olmalı');
-      return;
-    }
-    onApprove(newPassword);
-    setNewPassword('');
-    setExpanded(false);
-  };
-
-  return (
-    <View style={styles.userCard}>
-      <View style={styles.userTop}>
-        <View style={[styles.avatar, { backgroundColor: '#FFF3E0' }]}>
-          <KeyRound size={18} color="#F07D28" strokeWidth={2.3} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.userEmail} numberOfLines={1}>{request.email}</Text>
-          <Text style={styles.userMeta}>Talep: {date}</Text>
-        </View>
-      </View>
-
-      {expanded && (
-        <View style={styles.resetForm}>
-          <Text style={styles.resetFormLabel}>Yeni şifre belirleyin:</Text>
-          <View style={styles.resetInputWrapper}>
-            <TextInput
-              style={styles.resetInput}
-              placeholder="Yeni şifre (en az 6 karakter)"
-              placeholderTextColor={Colors.textMuted}
-              value={newPassword}
-              onChangeText={(t) => { setNewPassword(t); setPassError(''); }}
-              secureTextEntry={!showPass}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity onPress={() => setShowPass(!showPass)} style={styles.eyeBtn}>
-              {showPass
-                ? <EyeOff size={16} color={Colors.textMuted} />
-                : <Eye size={16} color={Colors.textMuted} />
-              }
-            </TouchableOpacity>
-          </View>
-          {passError ? <Text style={styles.passError}>{passError}</Text> : null}
-        </View>
-      )}
-
-      {confirmReject ? (
-        <View style={styles.confirmBox}>
-          <Text style={styles.confirmText}>Bu şifre sıfırlama talebini reddetmek istediğinize emin misiniz?</Text>
-          <View style={styles.confirmRow}>
-            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmReject(false)} activeOpacity={0.8}>
-              <Text style={styles.confirmCancelText}>İptal</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.confirmDeleteBtn, loading && { opacity: 0.7 }]}
-              onPress={() => { setConfirmReject(false); onReject(); }}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <X size={14} color={Colors.white} strokeWidth={2.4} />
-              <Text style={styles.confirmDeleteText}>Reddet</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.rejectBtn]}
-            onPress={() => setConfirmReject(true)}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            <X size={16} color={Colors.danger} strokeWidth={2.6} />
-            <Text style={styles.rejectBtnText}>Reddet</Text>
-          </TouchableOpacity>
-
-          {!expanded ? (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.setPassBtn]}
-              onPress={() => setExpanded(true)}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              <KeyRound size={16} color={Colors.white} strokeWidth={2.6} />
-              <Text style={styles.approveBtnText}>Şifre Belirle</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.approveBtn, loading && { opacity: 0.7 }]}
-              onPress={handleApprovePress}
-              disabled={loading}
-              activeOpacity={0.8}
-            >
-              {loading ? (
-                <ActivityIndicator size="small" color={Colors.white} />
-              ) : (
-                <>
-                  <Check size={16} color={Colors.white} strokeWidth={2.8} />
-                  <Text style={styles.approveBtnText}>Onayla</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
         </View>
       )}
     </View>
@@ -1259,7 +1032,6 @@ const styles = StyleSheet.create({
   rejectBtn: { backgroundColor: '#FFF0EF', borderWidth: 1, borderColor: '#FCCDC9' },
   rejectBtnText: { fontSize: 13, fontWeight: '700' as const, color: Colors.danger },
   approveBtn: { backgroundColor: Colors.primary },
-  setPassBtn: { backgroundColor: '#F07D28' },
   approveBtnText: { fontSize: 13, fontWeight: '700' as const, color: Colors.white },
   confirmBox: {
     backgroundColor: '#FFF8F0', borderRadius: 12, padding: 12, marginTop: 10,
@@ -1277,15 +1049,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.danger, borderRadius: 10, paddingVertical: 10, gap: 6,
   },
   confirmDeleteText: { fontSize: 13, fontWeight: '700' as const, color: Colors.white },
-  resetForm: { backgroundColor: Colors.background, borderRadius: 12, padding: 12, marginTop: 8, borderWidth: 1, borderColor: Colors.borderLight },
-  resetFormLabel: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' as const, marginBottom: 8 },
-  resetInputWrapper: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: Colors.white, borderRadius: 10, borderWidth: 1, borderColor: Colors.borderLight,
-  },
-  resetInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
-  eyeBtn: { padding: 10 },
-  passError: { fontSize: 12, color: Colors.danger, marginTop: 6 },
   card: {
     backgroundColor: Colors.white, borderRadius: 16, overflow: 'hidden',
     borderWidth: 1, borderColor: Colors.borderLight,
