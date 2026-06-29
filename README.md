@@ -37,3 +37,11 @@ EXPO_PUBLIC_RESEND_API_KEY=re_...
 ## Veritabanı
 
 `supabase/apply_schema.sql` dosyasını Supabase SQL Editor'de çalıştırın.
+
+## GitHub Mirror
+
+Kod değişikliklerini GitHub'a göndermek için:
+
+```bash
+bash push-to-github.sh
+```
