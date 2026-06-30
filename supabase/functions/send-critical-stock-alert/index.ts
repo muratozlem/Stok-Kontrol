@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { productId, totalStock } = body;
+    const { productId, totalStock, locationId: bodyLocationId } = body;
 
     if (!productId) {
       return new Response(JSON.stringify({ error: 'productId zorunludur' }), {
@@ -148,15 +148,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Depo bazlı: body'den gelen locationId (deponun lokasyonu) önceliklidir,
+    // fallback olarak ürünün kendi lokasyonu kullanılır.
+    const effectiveLocationId: string | null = (bodyLocationId as string | null | undefined) ?? product.location_id ?? null;
+
     if (callerProfile.role !== 'super_admin') {
-      if (product.location_id !== callerProfile.location_id) {
+      if (effectiveLocationId !== callerProfile.location_id) {
         return new Response(JSON.stringify({ error: 'Bu ürün için yetkiniz yok' }), {
           status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
         });
       }
     }
-
-    const effectiveLocationId: string | null = product.location_id ?? null;
 
     let locationName: string | undefined;
     if (effectiveLocationId) {
