@@ -26,7 +26,7 @@ interface ProductStock {
   criticalLevel: number
   totalStock: number
   isCritical: boolean
-  warehouses: { warehouseId: string; warehouseName: string; locationId: string | null; locationName: string; qty: number }[]
+  warehouses: { warehouseId: string; warehouseName: string; locationId: string | null; locationName: string; qty: number; isCritical: boolean }[]
 }
 
 function SelectFilter({ label, value, onChange, children }: {
@@ -74,16 +74,18 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         }
       }
       map[p.id].totalStock += row.quantity
+      const whIsCritical = (p.critical_stock_level ?? 0) > 0 && row.quantity <= (p.critical_stock_level ?? 0)
       map[p.id].warehouses.push({
         warehouseId: w.id,
         warehouseName: w.name,
         locationId: w.location_id,
         locationName: w.locations?.name ?? '—',
         qty: row.quantity,
+        isCritical: whIsCritical,
       })
     }
     for (const ps of Object.values(map)) {
-      ps.isCritical = ps.criticalLevel > 0 && ps.totalStock <= ps.criticalLevel
+      ps.isCritical = ps.warehouses.some(w => w.isCritical)
     }
     return map
   }, [inventoryRows])
@@ -108,7 +110,8 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         (!warehouseId || w.warehouseId === warehouseId)
       )
       const filteredTotal = filteredWhs.reduce((s, w) => s + w.qty, 0)
-      return { ...ps, warehouses: filteredWhs, totalStock: filteredTotal }
+      const filteredIsCritical = filteredWhs.some(w => w.isCritical)
+      return { ...ps, warehouses: filteredWhs, totalStock: filteredTotal, isCritical: filteredIsCritical }
     }).sort((a, b) => {
       if (a.isCritical && !b.isCritical) return -1
       if (!a.isCritical && b.isCritical) return 1
@@ -118,7 +121,10 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
 
   const totalProducts = filtered.length
   const totalStock = filtered.reduce((s, p) => s + p.totalStock, 0)
-  const criticalCount = filtered.filter(p => p.isCritical).length
+  const criticalCount = useMemo(
+    () => filtered.reduce((s, p) => s + p.warehouses.filter(w => w.isCritical).length, 0),
+    [filtered]
+  )
   const activeWarehouseCount = useMemo(() => {
     const ids = new Set<string>()
     for (const row of inventoryRows) if (row.warehouses) ids.add(row.warehouses.id)
@@ -165,7 +171,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
             ws.addRow({
               urun: ps.name, birim: ps.unit, toplam: ps.totalStock,
               kritik_seviye: ps.criticalLevel || '—',
-              durum: ps.isCritical ? 'KRİTİK' : 'Normal',
+              durum: w.isCritical ? 'KRİTİK' : 'Normal',
               depo: w.warehouseName, lokasyon: w.locationName, depo_stok: w.qty,
             })
           }
@@ -177,7 +183,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         const durum = row.getCell('durum').value
         if (durum === 'KRİTİK') {
           row.getCell('durum').font = { color: { argb: 'FFF87171' }, bold: true }
-          row.getCell('toplam').font = { color: { argb: 'FFF87171' }, bold: true }
+          row.getCell('depo_stok').font = { color: { argb: 'FFF87171' }, bold: true }
         }
       })
 
@@ -235,7 +241,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
             : ps.warehouses.map(w => [
                 ps.name, ps.unit, ps.totalStock.toLocaleString('tr-TR'),
                 ps.criticalLevel || '—',
-                ps.isCritical ? 'KRİTİK' : 'Normal',
+                w.isCritical ? 'KRİTİK' : 'Normal',
                 w.warehouseName, w.locationName, w.qty.toLocaleString('tr-TR'),
               ])
         ),
@@ -250,11 +256,11 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
               data.cell.styles.fontStyle = 'bold'
             }
           }
-          if (data.section === 'body' && data.column.index === 2) {
-            const row = filtered.flatMap(ps =>
-              ps.warehouses.length === 0 ? [ps] : ps.warehouses.map(() => ps)
-            )[data.row.index]
-            if (row?.isCritical) data.cell.styles.textColor = [248, 113, 113]
+          if (data.section === 'body' && data.column.index === 7) {
+            const flatRows = filtered.flatMap(ps =>
+              ps.warehouses.length === 0 ? [{ isCritical: ps.isCritical }] : ps.warehouses.map(w => ({ isCritical: w.isCritical }))
+            )
+            if (flatRows[data.row.index]?.isCritical) data.cell.styles.textColor = [248, 113, 113]
           }
         },
         columnStyles: {
@@ -394,16 +400,20 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         <div className="glass border border-red-500/20 bg-red-500/5 p-4">
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="w-4 h-4 text-red-400" />
-            <p className="text-sm font-semibold text-red-400">Kritik Stok Uyarısı — {criticalCount} ürün eşiğin altında</p>
+            <p className="text-sm font-semibold text-red-400">Kritik Stok Uyarısı — {criticalCount} depo-ürün eşiğin altında</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {filtered.filter(p => p.isCritical).map(p => (
-              <span key={p.id} className="inline-flex items-center gap-1.5 text-xs bg-red-500/10 border border-red-500/20 text-red-300 rounded-lg px-2.5 py-1.5">
-                <span className="font-medium">{p.name}</span>
-                <span className="text-red-500">·</span>
-                <span>{p.totalStock} / min {p.criticalLevel} {p.unit}</span>
-              </span>
-            ))}
+            {filtered.filter(p => p.isCritical).flatMap(p =>
+              p.warehouses.filter(w => w.isCritical).map(w => (
+                <span key={`${p.id}-${w.warehouseId}`} className="inline-flex items-center gap-1.5 text-xs bg-red-500/10 border border-red-500/20 text-red-300 rounded-lg px-2.5 py-1.5">
+                  <span className="font-medium">{p.name}</span>
+                  <span className="text-red-500/60">·</span>
+                  <span className="text-red-400/80">{w.warehouseName}</span>
+                  <span className="text-red-500/60">·</span>
+                  <span>{w.qty} / min {p.criticalLevel} {p.unit}</span>
+                </span>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -470,8 +480,8 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {ps.warehouses.slice(0, 3).map(w => (
-                            <span key={w.warehouseId} className="text-xs text-slate-400 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5">
-                              {w.warehouseName} <span className="text-slate-600">·</span> <span className="font-medium text-slate-300">{w.qty.toLocaleString('tr-TR')}</span>
+                            <span key={w.warehouseId} className={`text-xs rounded-lg px-2 py-0.5 border ${w.isCritical ? 'text-red-300 bg-red-500/10 border-red-500/25' : 'text-slate-400 bg-white/5 border-white/10'}`}>
+                              {w.warehouseName} <span className={w.isCritical ? 'text-red-500/50' : 'text-slate-600'}>·</span> <span className={`font-medium ${w.isCritical ? 'text-red-400' : 'text-slate-300'}`}>{w.qty.toLocaleString('tr-TR')}</span>
                             </span>
                           ))}
                           {ps.warehouses.length > 3 && (
@@ -486,10 +496,13 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
                           <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-medium">Depo Bazlı Dağılım</p>
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                             {ps.warehouses.map(w => (
-                              <div key={w.warehouseId} className="bg-white/3 border border-white/8 rounded-xl px-3 py-2">
-                                <p className="text-xs text-slate-300 font-medium">{w.warehouseName}</p>
+                              <div key={w.warehouseId} className={`border rounded-xl px-3 py-2 ${w.isCritical ? 'bg-red-500/5 border-red-500/20' : 'bg-white/3 border-white/8'}`}>
+                                <p className={`text-xs font-medium flex items-center gap-1 ${w.isCritical ? 'text-red-300' : 'text-slate-300'}`}>
+                                  {w.isCritical && <AlertTriangle className="w-3 h-3" />}
+                                  {w.warehouseName}
+                                </p>
                                 <p className="text-xs text-slate-500">{w.locationName}</p>
-                                <p className={`text-base font-bold mt-1 ${ps.isCritical ? 'text-red-400' : 'text-emerald-400'}`}>
+                                <p className={`text-base font-bold mt-1 ${w.isCritical ? 'text-red-400' : 'text-emerald-400'}`}>
                                   {w.qty.toLocaleString('tr-TR')} <span className="text-xs font-normal text-slate-500">{ps.unit}</span>
                                 </p>
                               </div>

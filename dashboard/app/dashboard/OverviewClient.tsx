@@ -207,11 +207,20 @@ export default function OverviewClient({ transactions, inventory, locations, war
   const stockLevels = useMemo(() => {
     const map: Record<string, { name: string; Stok: number; Kritik: number }> = {}
     filteredInv.forEach(i => {
-      const n = i.products?.name ?? 'Bilinmiyor'
-      if (!map[n]) map[n] = { name: n, Stok: 0, Kritik: i.products?.critical_stock_level ?? 0 }
-      map[n].Stok += i.quantity ?? 0
+      const key = `${i.products?.id ?? ''}__${i.warehouses?.id ?? ''}`
+      const label = `${i.products?.name ?? 'Bilinmiyor'} · ${i.warehouses?.name ?? '—'}`
+      if (!map[key]) map[key] = { name: label, Stok: 0, Kritik: i.products?.critical_stock_level ?? 0 }
+      map[key].Stok += i.quantity ?? 0
     })
-    return Object.values(map).sort((a, b) => b.Stok - a.Stok).slice(0, 12)
+    return Object.values(map)
+      .sort((a, b) => {
+        const aCrit = a.Kritik > 0 && a.Stok <= a.Kritik
+        const bCrit = b.Kritik > 0 && b.Stok <= b.Kritik
+        if (aCrit && !bCrit) return -1
+        if (!aCrit && bCrit) return 1
+        return a.Stok - b.Stok
+      })
+      .slice(0, 12)
   }, [filteredInv])
 
   const lowStock = useMemo(() => {
