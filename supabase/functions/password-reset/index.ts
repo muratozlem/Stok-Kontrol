@@ -101,11 +101,9 @@ Deno.serve(async (req: Request) => {
       if (existing?.created_at) {
         const ageSeconds = (Date.now() - new Date(existing.created_at).getTime()) / 1000;
         if (ageSeconds < COOLDOWN_SECONDS) {
-          const waitSeconds = Math.ceil(COOLDOWN_SECONDS - ageSeconds);
-          return new Response(
-            JSON.stringify({ ok: false, error: `Lütfen ${waitSeconds} saniye bekleyin.` }),
-            { status: 429, headers: resHeaders },
-          );
+          // Bekleme süresi henüz dolmadı. Hesap varlığını açığa çıkarmamak için
+          // hata kodu yerine sessizce 200 dönüyoruz; e-posta tekrar gönderilmiyor.
+          return new Response(JSON.stringify({ ok: true }), { headers: resHeaders });
         }
       }
 
@@ -127,7 +125,7 @@ Deno.serve(async (req: Request) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Stok Kontrol <onboarding@resend.dev>',
+          from: 'Stok Kontrol <noreply@stokkontrol.tr>',
           to: [email],
           subject: 'Şifre Sıfırlama Kodu — Stok Kontrol',
           html: `
@@ -217,6 +215,24 @@ Deno.serve(async (req: Request) => {
       if (!profile) {
         return new Response(JSON.stringify({ ok: false, error: 'Kullanıcı bulunamadı' }), {
           status: 404, headers: resHeaders,
+        });
+      }
+
+      // Defense-in-depth: verify that the auth.users record for this profile
+      // actually has the same email address that was used to request the OTP.
+      // If an attacker somehow changed profiles.email (e.g. via a future policy
+      // regression), this check ensures they cannot redirect a reset to a
+      // different Supabase Auth account.
+      const { data: authUserData, error: authLookupError } = await adminClient.auth.admin.getUserById(profile.id);
+      if (authLookupError || !authUserData?.user) {
+        return new Response(JSON.stringify({ ok: false, error: 'Kullanıcı doğrulanamadı' }), {
+          status: 404, headers: resHeaders,
+        });
+      }
+      if (authUserData.user.email?.toLowerCase() !== email) {
+        console.error('[password-reset] profile.email / auth.users.email mismatch for profile', profile.id);
+        return new Response(JSON.stringify({ ok: false, error: 'Kullanıcı doğrulanamadı' }), {
+          status: 400, headers: resHeaders,
         });
       }
 
