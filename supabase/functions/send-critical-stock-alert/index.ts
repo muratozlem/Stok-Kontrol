@@ -33,12 +33,16 @@ function esc(v: string | number | undefined | null): string {
 }
 
 function buildEmailHtml(info: {
-  productName: string; unit: string; totalStock: number; criticalLevel: number; locationName?: string;
+  productName: string; unit: string; totalStock: number; criticalLevel: number;
+  locationName?: string; warehouseName?: string;
 }): string {
   const unit = info.unit ? ` ${esc(info.unit)}` : '';
-  const locationLine = info.locationName
-    ? `<tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Lokasyon</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;">${esc(info.locationName)}</td></tr>`
-    : '';
+  const row = (label: string, value: string, valueStyle = '') =>
+    `<tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">${label}</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;${valueStyle}">${value}</td></tr>`;
+
+  const locationRow  = info.locationName  ? row('Lokasyon', esc(info.locationName))  : '';
+  const warehouseRow = info.warehouseName ? row('Depo',     esc(info.warehouseName)) : '';
+
   return `<!doctype html>
 <html>
 <head><meta charset="utf-8" /></head>
@@ -54,14 +58,16 @@ function buildEmailHtml(info: {
         Bu ürün kritik stok seviyesinin altına düştü. Lütfen en kısa sürede stok takviyesi yapınız.
       </p>
       <table style="width:100%;border-collapse:collapse;">
-        ${locationLine}
+        ${locationRow}
+        ${warehouseRow}
+        <tr><td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Ürün</td><td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:14px;">${esc(info.productName)}</td></tr>
         <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kalan Stok</td>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#D32F2F;font-size:18px;">${esc(info.totalStock)}${unit}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Güncel Stok</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:700;color:#D32F2F;font-size:20px;">${esc(info.totalStock)}${unit}</td>
         </tr>
         <tr>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kritik Seviye</td>
-          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:15px;">${esc(info.criticalLevel)}${unit}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;">Kritik Stok Sınırı</td>
+          <td style="padding:12px 0;border-bottom:1px solid #eee;text-align:right;font-weight:600;font-size:15px;color:#F57C00;">${esc(info.criticalLevel)}${unit}</td>
         </tr>
         <tr>
           <td style="padding:12px 0;color:#666;font-size:13px;">Tarih</td>
@@ -139,7 +145,7 @@ Deno.serve(async (req: Request) => {
     // Deponun lokasyonunu sunucu tarafında DB'den türet — client'a güvenme
     const { data: warehouseRow, error: whError } = await supabase
       .from('warehouses')
-      .select('id, location_id')
+      .select('id, name, location_id')
       .eq('id', warehouseId)
       .single();
 
@@ -149,7 +155,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const effectiveLocationId: string | null = (warehouseRow as { location_id?: string | null }).location_id ?? null;
+    const effectiveLocationId: string | null = (warehouseRow as { name?: string; location_id?: string | null }).location_id ?? null;
+    const warehouseName: string | undefined = (warehouseRow as { name?: string }).name ?? undefined;
 
     if (callerProfile.role !== 'super_admin') {
       if (effectiveLocationId !== callerProfile.location_id) {
@@ -214,6 +221,7 @@ Deno.serve(async (req: Request) => {
       totalStock,
       criticalLevel: product.critical_stock_level ?? 0,
       locationName,
+      warehouseName,
     });
 
     const locationLabel = locationName ? ` [${esc(locationName)}]` : '';
