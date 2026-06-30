@@ -13,7 +13,7 @@ import {
   Image,
 } from 'react-native';
 import { router, Stack } from 'expo-router';
-import { Mail, ArrowLeft, Send, CheckCircle2, ShieldCheck } from 'lucide-react-native';
+import { Mail, ArrowLeft, Send, CheckCircle2, KeyRound, Lock } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { supabase, isSupabaseConfigured } from '@/utils/supabase';
 
@@ -22,12 +22,16 @@ const GREEN  = '#7DC242';
 const YELLOW = '#F5C225';
 const ORANGE = '#F07D28';
 
+type Step = 'email' | 'otp' | 'done';
 
 export default function ForgotPasswordScreen() {
+  const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -41,39 +45,66 @@ export default function ForgotPasswordScreen() {
     ]).start();
   }, []);
 
-  const handleSubmit = async () => {
+  const handleRequestOTP = async () => {
     setError(null);
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) { setError('E-posta adresi boş bırakılamaz'); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) { setError('Geçerli bir e-posta adresi giriniz'); return; }
-
-    if (/[%_\\]/.test(cleanEmail)) {
-      setError('E-posta adresi geçersiz karakter içeriyor');
-      return;
-    }
+    if (/[%_\\]/.test(cleanEmail)) { setError('E-posta adresi geçersiz karakter içeriyor'); return; }
 
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured) throw new Error('Sistem yapılandırması eksik');
 
-      const { data, error: fnError } = await supabase.functions.invoke(
-        'request-password-reset',
-        { body: { email: cleanEmail } },
-      );
+      const { data, error: fnError } = await supabase.functions.invoke('password-reset', {
+        body: { action: 'request', email: cleanEmail },
+      });
 
       if (fnError) {
         const status = (fnError as { status?: number }).status;
-        if (status === 429) {
-          throw new Error('Çok fazla istek. Lütfen 10 dakika sonra tekrar deneyin.');
-        }
+        if (status === 429) throw new Error('Çok fazla istek. Lütfen 10 dakika sonra tekrar deneyin.');
         throw new Error('Bir hata oluştu. Tekrar deneyin.');
       }
 
-      if (data && data.ok === false && data.error?.includes('fazla istek')) {
-        throw new Error(data.error);
+      if (data && data.ok === false) {
+        throw new Error(data.error ?? 'Bir hata oluştu. Tekrar deneyin.');
       }
 
-      setSubmitted(true);
+      setEmail(cleanEmail);
+      setStep('otp');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Bir hata oluştu. Tekrar deneyin.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmOTP = async () => {
+    setError(null);
+    const trimmedCode = code.trim();
+    if (!trimmedCode || trimmedCode.length !== 6) { setError('6 haneli kodu eksiksiz girin'); return; }
+    if (!newPassword || newPassword.length < 6) { setError('Yeni şifre en az 6 karakter olmalı'); return; }
+    if (newPassword !== newPasswordConfirm) { setError('Şifreler eşleşmiyor'); return; }
+
+    setIsLoading(true);
+    try {
+      if (!isSupabaseConfigured) throw new Error('Sistem yapılandırması eksik');
+
+      const { data, error: fnError } = await supabase.functions.invoke('password-reset', {
+        body: { action: 'confirm', email, code: trimmedCode, newPassword },
+      });
+
+      if (fnError) {
+        const status = (fnError as { status?: number }).status;
+        if (status === 429) throw new Error('Çok fazla hatalı deneme. Lütfen yeni kod isteyin.');
+        throw new Error('Bir hata oluştu. Tekrar deneyin.');
+      }
+
+      if (data && data.ok === false) {
+        throw new Error(data.error ?? 'Bir hata oluştu. Tekrar deneyin.');
+      }
+
+      setStep('done');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Bir hata oluştu. Tekrar deneyin.');
     } finally {
@@ -110,25 +141,11 @@ export default function ForgotPasswordScreen() {
                 <View style={[styles.accentDot, { backgroundColor: GREEN }]} />
               </View>
 
-              {submitted ? (
-                <View style={styles.successArea}>
-                  <View style={styles.successIconWrap}>
-                    <ShieldCheck size={52} color={GREEN} />
-                  </View>
-                  <Text style={styles.title}>Talebiniz Alındı</Text>
-                  <Text style={styles.subtitle}>
-                    Şifre sıfırlama talebiniz yöneticiye iletildi.{'\n'}
-                    Yöneticiniz talebinizi onaylayıp yeni şifrenizi size bildirecektir.
-                  </Text>
-                  <TouchableOpacity style={styles.mainButton} onPress={() => router.replace('/login')} activeOpacity={0.85}>
-                    <Text style={styles.mainButtonText}>Giriş Sayfasına Dön</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
+              {step === 'email' && (
                 <>
                   <Text style={styles.title}>Şifremi Unuttum</Text>
                   <Text style={styles.subtitle}>
-                    E-posta adresinizi girin. Talebiniz yöneticiye iletilecek ve yeni şifreniz bildirilecektir.
+                    E-posta adresinizi girin. 6 haneli doğrulama kodu e-postanıza gönderilecektir.
                   </Text>
 
                   {error && (
@@ -151,14 +168,14 @@ export default function ForgotPasswordScreen() {
                         autoCorrect={false}
                         keyboardType="email-address"
                         returnKeyType="done"
-                        onSubmitEditing={handleSubmit}
+                        onSubmitEditing={handleRequestOTP}
                       />
                     </View>
                   </View>
 
                   <TouchableOpacity
                     style={[styles.mainButton, isLoading && styles.buttonDisabled]}
-                    onPress={handleSubmit}
+                    onPress={handleRequestOTP}
                     disabled={isLoading}
                     activeOpacity={0.85}
                   >
@@ -167,18 +184,120 @@ export default function ForgotPasswordScreen() {
                     ) : (
                       <>
                         <Send size={18} color={Colors.white} />
-                        <Text style={styles.mainButtonText}>Talep Gönder</Text>
+                        <Text style={styles.mainButtonText}>Kod Gönder</Text>
                       </>
                     )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity onPress={() => router.replace('/login')} style={styles.backLink} activeOpacity={0.7}>
+                    <ArrowLeft size={15} color={Colors.textSecondary} />
+                    <Text style={styles.backLinkText}>Giriş sayfasına dön</Text>
                   </TouchableOpacity>
                 </>
               )}
 
-              {!submitted && (
-                <TouchableOpacity onPress={() => router.replace('/login')} style={styles.backLink} activeOpacity={0.7}>
-                  <ArrowLeft size={15} color={Colors.textSecondary} />
-                  <Text style={styles.backLinkText}>Giriş sayfasına dön</Text>
-                </TouchableOpacity>
+              {step === 'otp' && (
+                <>
+                  <View style={styles.otpIconWrap}>
+                    <KeyRound size={40} color={BLUE} />
+                  </View>
+                  <Text style={styles.title}>Kodu Girin</Text>
+                  <Text style={styles.subtitle}>
+                    <Text style={{ fontWeight: '700', color: Colors.text }}>{email}</Text>
+                    {'\n'}adresine gönderilen 6 haneli kodu ve yeni şifrenizi girin.
+                  </Text>
+
+                  {error && (
+                    <View style={styles.errorBox}>
+                      <Text style={styles.errorText}>{error}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.inputGroup}>
+                    <View style={[styles.inputWrapper, styles.codeInputWrapper]}>
+                      <View style={[styles.inputAccent, { backgroundColor: ORANGE }]} />
+                      <TextInput
+                        style={[styles.input, styles.codeInput]}
+                        placeholder="_ _ _ _ _ _"
+                        placeholderTextColor={Colors.textMuted}
+                        value={code}
+                        onChangeText={(t) => setCode(t.replace(/[^0-9]/g, '').slice(0, 6))}
+                        keyboardType="number-pad"
+                        returnKeyType="next"
+                        maxLength={6}
+                      />
+                    </View>
+
+                    <View style={styles.inputWrapper}>
+                      <View style={[styles.inputAccent, { backgroundColor: GREEN }]} />
+                      <Lock size={18} color={Colors.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Yeni şifre (en az 6 karakter)"
+                        placeholderTextColor={Colors.textMuted}
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                        secureTextEntry
+                        returnKeyType="next"
+                      />
+                    </View>
+
+                    <View style={styles.inputWrapper}>
+                      <View style={[styles.inputAccent, { backgroundColor: GREEN }]} />
+                      <Lock size={18} color={Colors.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Yeni şifre (tekrar)"
+                        placeholderTextColor={Colors.textMuted}
+                        value={newPasswordConfirm}
+                        onChangeText={setNewPasswordConfirm}
+                        secureTextEntry
+                        returnKeyType="done"
+                        onSubmitEditing={handleConfirmOTP}
+                      />
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.mainButton, isLoading && styles.buttonDisabled]}
+                    onPress={handleConfirmOTP}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color={Colors.white} size="small" />
+                    ) : (
+                      <>
+                        <CheckCircle2 size={18} color={Colors.white} />
+                        <Text style={styles.mainButtonText}>Şifremi Güncelle</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => { setStep('email'); setCode(''); setNewPassword(''); setNewPasswordConfirm(''); setError(null); }}
+                    style={styles.backLink}
+                    activeOpacity={0.7}
+                  >
+                    <ArrowLeft size={15} color={Colors.textSecondary} />
+                    <Text style={styles.backLinkText}>E-postayı değiştir / yeni kod iste</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+
+              {step === 'done' && (
+                <View style={styles.successArea}>
+                  <View style={styles.successIconWrap}>
+                    <CheckCircle2 size={52} color={GREEN} />
+                  </View>
+                  <Text style={styles.title}>Şifre Güncellendi</Text>
+                  <Text style={styles.subtitle}>
+                    Şifreniz başarıyla değiştirildi.{'\n'}Yeni şifrenizle giriş yapabilirsiniz.
+                  </Text>
+                  <TouchableOpacity style={styles.mainButton} onPress={() => router.replace('/login')} activeOpacity={0.85}>
+                    <Text style={styles.mainButtonText}>Giriş Yap</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </Animated.View>
           </ScrollView>
@@ -235,9 +354,11 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.border,
     paddingHorizontal: 14, height: 52, overflow: 'hidden',
   },
+  codeInputWrapper: { justifyContent: 'center' },
   inputAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   inputIcon: { marginRight: 10 },
   input: { flex: 1, fontSize: 15, color: Colors.text, height: 52 },
+  codeInput: { textAlign: 'center', fontSize: 28, fontWeight: '800' as const, letterSpacing: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   mainButton: {
     backgroundColor: '#1A1D2E', borderRadius: 14,
     height: 52, flexDirection: 'row',
@@ -252,5 +373,5 @@ const styles = StyleSheet.create({
   backLinkText: { fontSize: 13, color: Colors.textSecondary },
   successArea: { alignItems: 'center', paddingVertical: 8 },
   successIconWrap: { marginBottom: 16 },
-  CheckCircle2Icon: { marginBottom: 16 },
+  otpIconWrap: { alignItems: 'center', marginBottom: 12 },
 });
