@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase-browser'
-import { Users, Plus, Trash2, Shield, CheckCircle, XCircle, Loader2, ChevronDown } from 'lucide-react'
+import { Users, Plus, Trash2, Shield, CheckCircle, XCircle, Loader2, ChevronDown, Eye, EyeOff } from 'lucide-react'
 
 const ROLES = [
   { value: 'admin', label: 'İdari İşler (Admin)' },
@@ -47,6 +47,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
 
   const [newEmail, setNewEmail] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [newRole, setNewRole] = useState('staff')
   const [newLocation, setNewLocation] = useState('')
   const [addError, setAddError] = useState('')
@@ -74,7 +75,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Kullanıcı eklenemedi')
 
-      setNewEmail(''); setNewPassword(''); setNewRole('staff'); setNewLocation('')
+      setNewEmail(''); setNewPassword(''); setShowPassword(false); setNewRole('staff'); setNewLocation('')
       setShowAdd(false)
       refresh()
     } catch (err: any) {
@@ -187,9 +188,26 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-500">Şifre</label>
-              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={6}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-sky-500 transition-colors"
-                placeholder="En az 6 karakter" />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 pr-10 text-sm text-slate-200 placeholder-slate-600 outline-none focus:border-sky-500 transition-colors"
+                  placeholder="En az 6 karakter"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-slate-500">Rol</label>
@@ -214,7 +232,7 @@ export default function UsersClient({ initialProfiles, locations }: { initialPro
               {adding && <Loader2 className="w-3 h-3 animate-spin" />}
               {adding ? 'Ekleniyor...' : 'Ekle'}
             </button>
-            <button type="button" onClick={() => setShowAdd(false)}
+            <button type="button" onClick={() => { setShowAdd(false); setNewEmail(''); setNewPassword(''); setShowPassword(false); setNewRole('staff'); setNewLocation(''); setAddError('') }}
               className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2 rounded-xl hover:bg-white/5 transition-colors">
               İptal
             </button>
