@@ -457,10 +457,9 @@ export const [DataProvider, useData] = createContextHook(() => {
 
   const clearAllDataMutation = useMutation({
     mutationFn: async () => {
-      await supabase.from('transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('inventory').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('products').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('warehouses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      const { data, error } = await supabase.functions.invoke('clear-all-data', { body: {} });
+      if (error) throw new Error(error.message ?? 'Veriler silinemedi');
+      if (data && data.ok === false) throw new Error(data.errors?.join(', ') ?? 'Veriler silinemedi');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
