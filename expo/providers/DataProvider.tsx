@@ -434,6 +434,7 @@ export const [DataProvider, useData] = createContextHook(() => {
               unit: String(prod.unit ?? ''),
               totalStock: warehouseStock,
               criticalLevel,
+              warehouseId,
               locationId: (whRow as { location_id?: string | null } | null)?.location_id ?? null,
             }).catch((e) => console.log('[Data] alert error:', (e as Error).message));
           }

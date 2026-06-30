@@ -3,7 +3,7 @@ import React, { useState, useMemo, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Package, AlertTriangle, Plus, Pencil, Trash2, X, Loader2,
-  ChevronDown, ChevronUp, Image as ImageIcon,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { createProduct, updateProduct, deleteProduct } from '../actions'
 
@@ -24,36 +24,32 @@ export default function ProductsClient({ products, inventory, canManage }: Props
   const [error, setError] = useState('')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [isPending, startTransition] = useTransition()
 
-  const stockByProduct = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const r of inventory) m[r.product_id] = (m[r.product_id] ?? 0) + r.quantity
-    return m
-  }, [inventory])
-
   const whsByProduct = useMemo(() => {
-    const m: Record<string, { id: string; name: string; qty: number }[]> = {}
+    const m: Record<string, { id: string; name: string; qty: number; isCritical: boolean }[]> = {}
     for (const r of inventory) {
       if (!m[r.product_id]) m[r.product_id] = []
+      const p = products.find(pr => pr.id === r.product_id)
+      const min = p?.critical_stock_level ?? 0
+      const isCritical = min > 0 && r.quantity <= min
       const ex = m[r.product_id].find(x => x.id === r.warehouse_id)
-      if (ex) ex.qty += r.quantity
-      else if (r.warehouses) m[r.product_id].push({ id: r.warehouse_id, name: r.warehouses.name, qty: r.quantity })
+      if (ex) { ex.qty += r.quantity; if (isCritical) ex.isCritical = true }
+      else if (r.warehouses) m[r.product_id].push({ id: r.warehouse_id, name: r.warehouses.name, qty: r.quantity, isCritical })
     }
     return m
-  }, [inventory])
+  }, [inventory, products])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return products.filter(p => p.name.toLowerCase().includes(q) || (p.barcode ?? '').toLowerCase().includes(q))
   }, [products, search])
 
-  const critical = products.filter(p => {
-    const min = p.critical_stock_level ?? 0
-    return min > 0 && (stockByProduct[p.id] ?? 0) <= min
-  })
+  const critical = useMemo(() =>
+    products.filter(p => (whsByProduct[p.id] ?? []).some(w => w.isCritical)),
+    [products, whsByProduct]
+  )
 
   function openAdd() { setEditing(null); setMode('add'); setError('') }
   function openEdit(p: Product) { setEditing(p); setMode('edit'); setError('') }
@@ -117,7 +113,7 @@ export default function ProductsClient({ products, inventory, canManage }: Props
                 <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 w-8"></th>
                 <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Ürün</th>
                 <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Barkod</th>
-                <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Stok</th>
+                <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Depo Stokları</th>
                 <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3 hidden md:table-cell">Min.</th>
                 <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Durum</th>
                 {canManage && <th className="px-4 py-3 w-20"></th>}
@@ -125,11 +121,9 @@ export default function ProductsClient({ products, inventory, canManage }: Props
             </thead>
             <tbody>
               {filtered.map(p => {
-                const stock = stockByProduct[p.id] ?? 0
                 const minStock = p.critical_stock_level ?? 0
-                const isCrit = minStock > 0 && stock <= minStock
                 const whs = whsByProduct[p.id] ?? []
-                const isExp = expanded === p.id
+                const isCrit = whs.some(w => w.isCritical)
                 return (
                   <React.Fragment key={p.id}>
                     <tr className={`border-b border-white/5 ${isCrit ? 'bg-red-500/5' : 'hover:bg-white/2'} transition-colors`}>
@@ -147,15 +141,21 @@ export default function ProductsClient({ products, inventory, canManage }: Props
                         <p className="text-xs text-slate-500">{p.unit ?? 'adet'}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-400 font-mono text-xs hidden sm:table-cell">{p.barcode || '—'}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <span className={`font-bold ${isCrit ? 'text-red-400' : 'text-slate-200'}`}>{stock.toLocaleString('tr-TR')}</span>
-                          {whs.length > 0 && (
-                            <button onClick={() => setExpanded(isExp ? null : p.id)} className="ml-1 text-slate-500 hover:text-slate-300 transition-colors">
-                              {isExp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                          )}
-                        </div>
+                      <td className="px-4 py-3">
+                        {whs.length === 0 ? (
+                          <span className="text-xs text-slate-600">Stok yok</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {whs.map(w => (
+                              <div key={w.id} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 border text-xs ${w.isCritical ? 'bg-red-500/10 border-red-500/20 text-red-300' : 'bg-white/5 border-white/10 text-slate-300'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${w.isCritical ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                                <span className="text-slate-400 truncate max-w-[90px]">{w.name}</span>
+                                <span className="font-bold">{w.qty.toLocaleString('tr-TR')}</span>
+                                <span className="text-slate-500">{p.unit ?? 'adet'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-500 hidden md:table-cell">{minStock || '—'}</td>
                       <td className="px-4 py-3 text-center">
@@ -183,21 +183,6 @@ export default function ProductsClient({ products, inventory, canManage }: Props
                         </td>
                       )}
                     </tr>
-                    {isExp && whs.length > 0 && (
-                      <tr className="border-b border-white/5 bg-white/2">
-                        <td colSpan={canManage ? 7 : 6} className="px-6 py-3">
-                          <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-medium">Depo Bazlı Dağılım</p>
-                          <div className="flex flex-wrap gap-2">
-                            {whs.map(w => (
-                              <div key={w.id} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5">
-                                <span className="text-xs text-slate-400 truncate max-w-[120px]">{w.name}</span>
-                                <span className="text-xs font-bold text-slate-200">{w.qty.toLocaleString('tr-TR')}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </React.Fragment>
                 )
               })}

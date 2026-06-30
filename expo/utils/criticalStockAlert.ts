@@ -8,6 +8,7 @@ export interface CriticalProductInfo {
   unit: string;
   totalStock: number;
   criticalLevel: number;
+  warehouseId: string;
   locationId?: string | null;
 }
 
@@ -79,11 +80,8 @@ async function sendViaEdgeFunction(info: CriticalProductInfo): Promise<boolean> 
       },
       body: JSON.stringify({
         productId: info.productId,
-        productName: info.productName,
-        unit: info.unit,
         totalStock: info.totalStock,
-        criticalLevel: info.criticalLevel,
-        locationId: info.locationId ?? null,
+        warehouseId: info.warehouseId,
       }),
     });
 

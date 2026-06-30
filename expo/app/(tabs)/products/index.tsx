@@ -28,7 +28,7 @@ import EmptyState from '@/components/EmptyState';
 import { Product } from '@/types';
 
 export default function ProductsListPage() {
-  const { products, getStockForProduct, getLowStockProducts } = useData();
+  const { products, inventory, warehouses, getLowStockProducts } = useData();
   const { isStaff } = useAuth();
   const [search, setSearch] = useState<string>('');
 
@@ -58,9 +58,14 @@ export default function ProductsListPage() {
 
   const renderProduct = useCallback(
     ({ item }: { item: Product }) => {
-      const totalStock = getStockForProduct(item.id);
       const isCritical = lowStockIds.has(item.id);
-      const isEmpty = totalStock === 0;
+      const whStocks = warehouses
+        .map(w => {
+          const qty = inventory.find(i => i.productId === item.id && i.warehouseId === w.id)?.quantity ?? 0;
+          const isCrit = item.criticalStockLevel > 0 && qty <= item.criticalStockLevel;
+          return { name: w.name, qty, isCrit };
+        })
+        .filter(w => w.qty > 0);
 
       return (
         <TouchableOpacity
@@ -88,43 +93,32 @@ export default function ProductsListPage() {
               {item.barcode || 'Barkod yok'}
             </Text>
             <View style={styles.cardBottomRow}>
-              <View
-                style={[
-                  styles.stockPill,
-                  isCritical && styles.stockPillCritical,
-                  isEmpty && styles.stockPillEmpty,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.stockDot,
-                    {
-                      backgroundColor: isEmpty
-                        ? Colors.textMuted
-                        : isCritical
-                        ? Colors.danger
-                        : Colors.success,
-                    },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.stockText,
-                    {
-                      color: isEmpty
-                        ? Colors.textSecondary
-                        : isCritical
-                        ? Colors.danger
-                        : Colors.text,
-                    },
-                  ]}
-                >
-                  {totalStock} {item.unit}
-                </Text>
+              <View style={styles.whChipsRow}>
+                {whStocks.length === 0 ? (
+                  <View style={[styles.stockPill, styles.stockPillEmpty]}>
+                    <View style={[styles.stockDot, { backgroundColor: Colors.textMuted }]} />
+                    <Text style={[styles.stockText, { color: Colors.textSecondary }]}>Stok yok</Text>
+                  </View>
+                ) : (
+                  whStocks.slice(0, 2).map((ws, idx) => (
+                    <View key={idx} style={[styles.stockPill, ws.isCrit && styles.stockPillCritical]}>
+                      <View style={[styles.stockDot, { backgroundColor: ws.isCrit ? Colors.danger : Colors.success }]} />
+                      <Text
+                        style={[styles.stockText, { color: ws.isCrit ? Colors.danger : Colors.text }]}
+                        numberOfLines={1}
+                      >
+                        {ws.name}: {ws.qty} {item.unit}
+                      </Text>
+                    </View>
+                  ))
+                )}
+                {whStocks.length > 2 && (
+                  <View style={[styles.stockPill, styles.stockPillEmpty]}>
+                    <Text style={[styles.stockText, { color: Colors.textMuted }]}>+{whStocks.length - 2}</Text>
+                  </View>
+                )}
               </View>
-              <Text style={styles.criticalLevel}>
-                Min {item.criticalStockLevel}
-              </Text>
+              <Text style={styles.criticalLevel}>Min {item.criticalStockLevel}</Text>
             </View>
           </View>
           {isCritical && (
@@ -138,7 +132,7 @@ export default function ProductsListPage() {
         </TouchableOpacity>
       );
     },
-    [getStockForProduct, lowStockIds, handleProduct]
+    [inventory, warehouses, lowStockIds, handleProduct]
   );
 
   return (
@@ -361,6 +355,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 7,
+    gap: 6,
+  },
+  whChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    flex: 1,
   },
   stockPill: {
     flexDirection: 'row',

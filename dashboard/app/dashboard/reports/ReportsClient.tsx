@@ -24,7 +24,6 @@ interface ProductStock {
   name: string
   unit: string
   criticalLevel: number
-  totalStock: number
   isCritical: boolean
   warehouses: { warehouseId: string; warehouseName: string; locationId: string | null; locationName: string; qty: number; isCritical: boolean }[]
 }
@@ -70,10 +69,9 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         map[p.id] = {
           id: p.id, name: p.name, unit: p.unit || 'adet',
           criticalLevel: p.critical_stock_level ?? 0,
-          totalStock: 0, isCritical: false, warehouses: [],
+          isCritical: false, warehouses: [],
         }
       }
-      map[p.id].totalStock += row.quantity
       const whIsCritical = (p.critical_stock_level ?? 0) > 0 && row.quantity <= (p.critical_stock_level ?? 0)
       map[p.id].warehouses.push({
         warehouseId: w.id,
@@ -109,9 +107,8 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         (!locationId || w.locationId === locationId) &&
         (!warehouseId || w.warehouseId === warehouseId)
       )
-      const filteredTotal = filteredWhs.reduce((s, w) => s + w.qty, 0)
       const filteredIsCritical = filteredWhs.some(w => w.isCritical)
-      return { ...ps, warehouses: filteredWhs, totalStock: filteredTotal, isCritical: filteredIsCritical }
+      return { ...ps, warehouses: filteredWhs, isCritical: filteredIsCritical }
     }).sort((a, b) => {
       if (a.isCritical && !b.isCritical) return -1
       if (!a.isCritical && b.isCritical) return 1
@@ -120,7 +117,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
   }, [productMap, locationId, warehouseId, statusFilter])
 
   const totalProducts = filtered.length
-  const totalStock = filtered.reduce((s, p) => s + p.totalStock, 0)
+  const totalStock = filtered.reduce((s, p) => s + p.warehouses.reduce((ws, w) => ws + w.qty, 0), 0)
   const criticalCount = useMemo(
     () => filtered.reduce((s, p) => s + p.warehouses.filter(w => w.isCritical).length, 0),
     [filtered]
@@ -149,30 +146,29 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
       ws.columns = [
         { header: 'Ürün', key: 'urun', width: 28 },
         { header: 'Birim', key: 'birim', width: 10 },
-        { header: 'Toplam Stok', key: 'toplam', width: 14 },
-        { header: 'Kritik Seviye', key: 'kritik_seviye', width: 14 },
-        { header: 'Durum', key: 'durum', width: 12 },
         { header: 'Depo', key: 'depo', width: 22 },
         { header: 'Lokasyon', key: 'lokasyon', width: 20 },
-        { header: 'Depo Stoğu', key: 'depo_stok', width: 12 },
+        { header: 'Depo Stoğu', key: 'depo_stok', width: 14 },
+        { header: 'Kritik Seviye', key: 'kritik_seviye', width: 14 },
+        { header: 'Durum', key: 'durum', width: 12 },
       ]
       ws.getRow(1).font = { bold: true }
 
       for (const ps of filtered) {
         if (ps.warehouses.length === 0) {
           ws.addRow({
-            urun: ps.name, birim: ps.unit, toplam: ps.totalStock,
+            urun: ps.name, birim: ps.unit,
+            depo: '—', lokasyon: '—', depo_stok: 0,
             kritik_seviye: ps.criticalLevel || '—',
             durum: ps.isCritical ? 'KRİTİK' : 'Normal',
-            depo: '—', lokasyon: '—', depo_stok: 0,
           })
         } else {
           for (const w of ps.warehouses) {
             ws.addRow({
-              urun: ps.name, birim: ps.unit, toplam: ps.totalStock,
+              urun: ps.name, birim: ps.unit,
+              depo: w.warehouseName, lokasyon: w.locationName, depo_stok: w.qty,
               kritik_seviye: ps.criticalLevel || '—',
               durum: w.isCritical ? 'KRİTİK' : 'Normal',
-              depo: w.warehouseName, lokasyon: w.locationName, depo_stok: w.qty,
             })
           }
         }
@@ -228,21 +224,21 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
       doc.setTextColor(100, 116, 139)
       doc.text(`Rapor Tarihi: ${new Date().toLocaleString('tr-TR')}`, 14, 23)
       doc.text(
-        `Ürün: ${totalProducts}  |  Toplam Stok: ${totalStock.toLocaleString('tr-TR')}  |  Kritik: ${criticalCount}  |  Depo: ${activeWarehouseCount}`,
+        `Ürün: ${totalProducts}  |  Toplam Envanter: ${totalStock.toLocaleString('tr-TR')}  |  Kritik: ${criticalCount}  |  Depo: ${activeWarehouseCount}`,
         14, 28,
       )
 
       autoTable(doc, {
         startY: 34,
-        head: [['Ürün', 'Birim', 'Toplam Stok', 'Kritik Seviye', 'Durum', 'Depo', 'Lokasyon', 'Depo Stoğu']],
+        head: [['Ürün', 'Birim', 'Depo', 'Lokasyon', 'Depo Stoğu', 'Kritik Seviye', 'Durum']],
         body: filtered.flatMap(ps =>
           ps.warehouses.length === 0
-            ? [[ps.name, ps.unit, ps.totalStock.toLocaleString('tr-TR'), ps.criticalLevel || '—', ps.isCritical ? 'KRİTİK' : 'Normal', '—', '—', '0']]
+            ? [[ps.name, ps.unit, '—', '—', '0', ps.criticalLevel || '—', ps.isCritical ? 'KRİTİK' : 'Normal']]
             : ps.warehouses.map(w => [
-                ps.name, ps.unit, ps.totalStock.toLocaleString('tr-TR'),
+                ps.name, ps.unit,
+                w.warehouseName, w.locationName, w.qty.toLocaleString('tr-TR'),
                 ps.criticalLevel || '—',
                 w.isCritical ? 'KRİTİK' : 'Normal',
-                w.warehouseName, w.locationName, w.qty.toLocaleString('tr-TR'),
               ])
         ),
         headStyles: { fillColor: [15, 23, 42], textColor: [148, 163, 184], fontStyle: 'bold', fontSize: 7 },
@@ -250,13 +246,13 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
         alternateRowStyles: { fillColor: [15, 23, 42] },
         styles: { fillColor: [30, 41, 59], lineColor: [51, 65, 85], lineWidth: 0.1 },
         didParseCell(data) {
-          if (data.section === 'body' && data.column.index === 4) {
+          if (data.section === 'body' && data.column.index === 6) {
             if (data.cell.raw === 'KRİTİK') {
               data.cell.styles.textColor = [248, 113, 113]
               data.cell.styles.fontStyle = 'bold'
             }
           }
-          if (data.section === 'body' && data.column.index === 7) {
+          if (data.section === 'body' && data.column.index === 4) {
             const flatRows = filtered.flatMap(ps =>
               ps.warehouses.length === 0 ? [{ isCritical: ps.isCritical }] : ps.warehouses.map(w => ({ isCritical: w.isCritical }))
             )
@@ -264,9 +260,9 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
           }
         },
         columnStyles: {
-          0: { cellWidth: 45 }, 1: { cellWidth: 15 }, 2: { cellWidth: 22, halign: 'right' },
-          3: { cellWidth: 22, halign: 'right' }, 4: { cellWidth: 20, halign: 'center' },
-          5: { cellWidth: 38 }, 6: { cellWidth: 30 }, 7: { cellWidth: 22, halign: 'right' },
+          0: { cellWidth: 45 }, 1: { cellWidth: 13 }, 2: { cellWidth: 40 },
+          3: { cellWidth: 35 }, 4: { cellWidth: 22, halign: 'right' },
+          5: { cellWidth: 22, halign: 'right' }, 6: { cellWidth: 20, halign: 'center' },
         },
         margin: { left: 14, right: 14 },
       })
@@ -371,7 +367,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
             <CheckCircle2 className="w-5 h-5 text-emerald-400" />
           </div>
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider">Toplam Stok</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wider">Toplam Envanter</p>
             <p className="text-2xl font-bold text-emerald-400">{totalStock.toLocaleString('tr-TR')}</p>
           </div>
         </div>
@@ -443,10 +439,9 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
                 <tr className="border-b border-white/5">
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Ürün</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Birim</th>
-                  <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Toplam Stok</th>
                   <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Kritik Seviye</th>
                   <th className="text-center text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Durum</th>
-                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Depolar</th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-4 py-3">Depo Stokları</th>
                 </tr>
               </thead>
               <tbody>
@@ -460,9 +455,6 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
                         <p className={`font-medium ${ps.isCritical ? 'text-red-300' : 'text-slate-200'}`}>{ps.name}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-500 text-xs">{ps.unit}</td>
-                      <td className={`px-4 py-3 text-right font-bold ${ps.isCritical ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {ps.totalStock.toLocaleString('tr-TR')}
-                      </td>
                       <td className="px-4 py-3 text-right text-slate-500 text-xs">
                         {ps.criticalLevel > 0 ? ps.criticalLevel.toLocaleString('tr-TR') : '—'}
                       </td>
@@ -492,7 +484,7 @@ export default function ReportsClient({ inventoryRows, locations, warehouses }: 
                     </tr>
                     {expandedProduct === ps.id && ps.warehouses.length > 0 && (
                       <tr className="border-b border-white/5 bg-white/2">
-                        <td colSpan={6} className="px-6 py-3">
+                        <td colSpan={5} className="px-6 py-3">
                           <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider font-medium">Depo Bazlı Dağılım</p>
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                             {ps.warehouses.map(w => (

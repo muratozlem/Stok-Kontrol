@@ -321,7 +321,7 @@ export default function OverviewClient({ transactions, inventory, locations, war
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KPICard title="Toplam Stok" value={totalStock.toLocaleString('tr-TR')} icon={Package} color="sky" sub="mevcut adet" />
+        <KPICard title="Toplam Envanter" value={totalStock.toLocaleString('tr-TR')} icon={Package} color="sky" sub="mevcut adet" />
         <KPICard title="Kritik Ürün" value={criticalItems} icon={AlertTriangle} color="red" sub="düşük stok" />
         <KPICard title="Dönem Girişi" value={periodIn.toLocaleString('tr-TR')} icon={TrendingUp} color="emerald" sub={`${inCount} işlem`} />
         <KPICard title="Dönem Çıkışı" value={periodOut.toLocaleString('tr-TR')} icon={TrendingDown} color="orange" sub={`${outCount} işlem`} />

@@ -120,10 +120,10 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { productId, totalStock, locationId: bodyLocationId } = body;
+    const { productId, totalStock, warehouseId } = body;
 
-    if (!productId) {
-      return new Response(JSON.stringify({ error: 'productId zorunludur' }), {
+    if (!productId || !warehouseId) {
+      return new Response(JSON.stringify({ error: 'productId ve warehouseId zorunludur' }), {
         status: 400, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
@@ -136,9 +136,32 @@ Deno.serve(async (req: Request) => {
 
     const supabase = adminClient;
 
+    // Deponun lokasyonunu sunucu tarafında DB'den türet — client'a güvenme
+    const { data: warehouseRow, error: whError } = await supabase
+      .from('warehouses')
+      .select('id, location_id')
+      .eq('id', warehouseId)
+      .single();
+
+    if (whError || !warehouseRow) {
+      return new Response(JSON.stringify({ error: 'Depo bulunamadı' }), {
+        status: 404, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+
+    const effectiveLocationId: string | null = (warehouseRow as { location_id?: string | null }).location_id ?? null;
+
+    if (callerProfile.role !== 'super_admin') {
+      if (effectiveLocationId !== callerProfile.location_id) {
+        return new Response(JSON.stringify({ error: 'Bu depo için yetkiniz yok' }), {
+          status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('id, name, unit, critical_stock_level, location_id')
+      .select('id, name, unit, critical_stock_level')
       .eq('id', productId)
       .single();
 
@@ -146,18 +169,6 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Ürün bulunamadı' }), {
         status: 404, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
       });
-    }
-
-    // Depo bazlı: body'den gelen locationId (deponun lokasyonu) önceliklidir,
-    // fallback olarak ürünün kendi lokasyonu kullanılır.
-    const effectiveLocationId: string | null = (bodyLocationId as string | null | undefined) ?? product.location_id ?? null;
-
-    if (callerProfile.role !== 'super_admin') {
-      if (effectiveLocationId !== callerProfile.location_id) {
-        return new Response(JSON.stringify({ error: 'Bu ürün için yetkiniz yok' }), {
-          status: 403, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
-        });
-      }
     }
 
     let locationName: string | undefined;
